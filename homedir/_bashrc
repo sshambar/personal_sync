@@ -1,0 +1,14 @@
+# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
+# .bashrc
+
+# User specific aliases and functions
+
+# Source global definitions
+[ -f /etc/bashrc ] && . /etc/bashrc
+
+# Read any local .profile.d overrides
+for i in ~/.profile.d/*.sh; do
+  [ -r "$i" ] || continue
+  if [ -n "$PS1" ]; then . "$i"; else . "$i" >/dev/null; fi
+done
+unset i

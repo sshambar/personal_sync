@@ -1,0 +1,9 @@
+# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
+# .bash_profile
+
+# Other login files?
+[ -r ~/.bash_login ] && . ~/.bash_login || \
+  { [ -r ~/.profile ] && . ~/.profile; }
+
+# Get the aliases and functions
+[ -r ~/.bashrc ] && . ~/.bashrc
