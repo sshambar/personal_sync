@@ -2,4 +2,5 @@
 # zpath.sh
 
 # cleanup apath.sh
-unset -f add_root_path add_path
+unset -f add_root_path add_path remove_path
+
