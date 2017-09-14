@@ -12,6 +12,9 @@
 #  (if (not server-use-tcp)
 #      (setenv "MYEC_SERVER_SOCKDIR" server-socket-dir)))
 
+# Skip all for noninteractive shells.
+[ ! -t 0 ] && return
+
 setup_emacs() {
 
   local myec_version
@@ -81,5 +84,5 @@ setup_emacs() {
   fi
 }
 
-[ -n "$PS1" ] && setup_emacs
+setup_emacs
 unset -f setup_emacs

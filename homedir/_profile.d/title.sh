@@ -1,6 +1,9 @@
 # -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
 # title.sh - titles on capable terminals (bash)
 
+# Skip all for noninteractive shells.
+[ ! -t 0 ] && return
+
 # for interactive terminals only
 setup_title() {
 
@@ -17,7 +20,7 @@ setup_title() {
 
   case $TERM in
     xterm*|screen*)
-      reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/~}"; }
+      reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/\~}"; }
       PROMPT_COMMAND="reset_title"
       wrap_cmd() { xtitle $1; command "$@"; }
       telnet() { wrap_cmd $FUNCNAME "$@"; }
@@ -28,11 +31,11 @@ setup_title() {
   esac
 }
 
-if [ -n "$PS1" ]; then
-  if [ -n "$BASH_VERSION" ]; then
-    PS1="[\\u@\\h \\W]\\$ "
-    setup_title
-  else
-    PS1="[$USER@\\h \\W]\\$ "
-  fi
+if [ -n "$BASH_VERSION" ]; then
+  PS1="[\\u@\\h \\W]\\$ "
+  setup_title
+else
+  PS1="[$USER@\\h \\W]\\$ "
 fi
+
+unset -f setup_title
