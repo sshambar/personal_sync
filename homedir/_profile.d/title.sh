@@ -20,7 +20,11 @@ setup_title() {
 
   case $TERM in
     xterm*|screen*)
-      reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/\~}"; }
+      if [[ "$BASH_VERSION" =~ ^4. ]]; then
+        reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/\~}"; }
+      else
+        reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/~}"; }
+      fi
       PROMPT_COMMAND="reset_title"
       wrap_cmd() { xtitle $1; command "$@"; }
       telnet() { wrap_cmd $FUNCNAME "$@"; }
