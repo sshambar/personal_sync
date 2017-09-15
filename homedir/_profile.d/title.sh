@@ -8,27 +8,14 @@
 setup_title() {
 
   case $TERM in
-    xterm*)
-      xtitle() { echo -n "]2;$*"; }
-      ;;
-    screen*)
-      xtitle() { echo -n "]2;($*)\\"; }
-      ;;
-    *)
-      ;;
-  esac
-
-  case $TERM in
     xterm*|screen*)
-      if [[ "$BASH_VERSION" =~ ^4. ]]; then
-        reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/\~}"; }
+      if [[ "$BASH_VERSION" =~ ^3. ]]; then
+        PROMPT_COMMAND='printf "\033]2;%s@%s:%s\033\\" "$USER" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}"'
       else
-        reset_title() { xtitle "${USER}@${HOSTNAME%%.*}:${PWD/#$HOME/~}"; }
+        PROMPT_COMMAND='printf "\033]2;%s@%s:%s\033\\" "$USER" "${HOSTNAME%%.*}" "${PWD/#$HOME/\~}"'
       fi
-      PROMPT_COMMAND="reset_title"
-      wrap_cmd() { xtitle $1; command "$@"; }
-      telnet() { wrap_cmd $FUNCNAME "$@"; }
-      ssh() { wrap_cmd $FUNCNAME "$@"; }
+      telnet() { printf "\033]2;%s\033\\" "telnet $*"; command telnet "$@"; }
+      ssh() { printf "\033]2;%s\033\\" "ssh $*"; command ssh "$@"; }
       ;;
     *)
       ;;
@@ -36,7 +23,7 @@ setup_title() {
 }
 
 if [ -n "$BASH_VERSION" ]; then
-  PS1="[\\u@\\h \\W]\\$ "
+  PS1="[\u@\h \W]\\$ "
   setup_title
 else
   PS1="[$USER@\\h \\W]\\$ "
