@@ -11,5 +11,9 @@ function scr() {
 }
 
 # nice shortcuts
-alias h=history
+alias h=history 2>/dev/null
 
+# use dnf cache files if not running as root
+if [ "${EUID:-}" != 0 ] ; then
+  alias dnf='dnf --cacheonly' 2>/dev/null
+fi

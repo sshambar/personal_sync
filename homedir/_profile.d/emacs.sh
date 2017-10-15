@@ -56,9 +56,9 @@ setup_emacs() {
       export EDITOR="emacsclient -s $myec_server_sock"
 
       # emacs/less/man should give prompt back inside emacs
-      alias emacs="$EDITOR -n"
-      alias less="$EDITOR -n"
-      alias more="$EDITOR -n"
+      alias emacs="$EDITOR -n" 2>/dev/null
+      alias less="$EDITOR -n" 2>/dev/null
+      alias more="$EDITOR -n" 2>/dev/null
       # just handle one man entry...
       man() { $EDITOR >/dev/null -n -e "(man \"$1\")"; }
 
