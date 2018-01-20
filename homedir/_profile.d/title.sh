@@ -1,4 +1,4 @@
-# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 # title.sh - titles on capable terminals (bash)
 
 # Skip all for noninteractive shells.
@@ -30,3 +30,7 @@ else
 fi
 
 unset -f setup_title
+# Local Variables:
+# sh-basic-offset: 2
+# indent-tabs-mode: nil
+# End:

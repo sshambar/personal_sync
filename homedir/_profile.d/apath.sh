@@ -1,5 +1,5 @@
-# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
-# apath.sh
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
+# apath (link apath and zpath to ~/.profile.d to use)
 
 # User specific aliases and functions
 remove_path() {
@@ -48,3 +48,7 @@ export PATH LD_LIBRARY_PATH MANPATH INFOPATH
 
 # basic paths
 for i in / /usr/ ; do add_root_path $i; done
+# Local Variables:
+# sh-basic-offset: 2
+# indent-tabs-mode: nil
+# End:

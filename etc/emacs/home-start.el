@@ -324,7 +324,6 @@ of an error, just add the package to a list of missing packages."
 
 ;(setq mumamo-chunk-coloring 10)
 
-(add-to-list 'auto-mode-alist '("\\.cs\\'" . html-mode) t)
 (add-to-list 'auto-mode-alist '("\\.xml\\'" . html-mode) t)
 
 (add-hook 'html-mode-hook
@@ -335,14 +334,37 @@ of an error, just add the package to a list of missing packages."
             ) t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CSS Mode
+
+(add-hook 'css-mode-hook
+	  (lambda ()
+	    (setq css-indent-offset 2)
+	    ) t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Javascript Mode
+
+(add-hook 'js-mode-hook
+	  (lambda ()
+	    (setq js-indent-level 2)
+	  ) t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Shell Mode
 
 (add-hook 'sh-mode-hook
 	  (lambda ()
 	    (setq sh-indentation 2)
+	    (setq sh-basic-offset 2)
             (setq indent-tabs-mode nil)
             (setq show-trailing-whitespace t)
 	    ) t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Conf Mode
+
+;; add httpd .inc files
+(add-to-list 'auto-mode-alist '("\\.inc\\'" . conf-space-mode) t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Font Lock
@@ -370,10 +392,6 @@ of an error, just add the package to a list of missing packages."
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Default Params
-
-(setq css-indent-offset 2)
-(setq js-indent-level 2)
-(setq sh-basic-offset 2)
 
 (setq diff-switches "-u")
 (setq compile-command "make ")
@@ -483,12 +501,18 @@ of an error, just add the package to a list of missing packages."
   (if (not server-use-tcp)
       (setenv "MYEC_SERVER_SOCKDIR" server-socket-dir)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; External packages
+
 ;; Use secure connection to ELPA
 (setq package-archives '(("gnu" . "https://elpa.gnu.org/packages/")
 			 ("melpa" . "https://melpa.org/packages/")))
 
 ;; Re-init with updated package-directory-list
 (when (fboundp 'package-initialize) (package-initialize))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Web Mode (ELPA package, package-initialize first)
 
 (when (fboundp 'web-mode)
   (add-to-list 'auto-mode-alist '("\\.html?\\'" . web-mode))
@@ -501,3 +525,4 @@ of an error, just add the package to a list of missing packages."
   (add-to-list 'auto-mode-alist '("\\.djhtml\\'" . web-mode))
   (add-to-list 'auto-mode-alist '("\\.php\\'" . web-mode))
   )
+
