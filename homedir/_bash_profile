@@ -1,9 +1,13 @@
-# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 # .bash_profile
 
 # Other login files?
 [ -r ~/.bash_login ] && . ~/.bash_login || \
-  { [ -r ~/.profile ] && . ~/.profile; }
+    { [ -r ~/.profile ] && . ~/.profile; }
 
 # Get the aliases and functions
 [ -r ~/.bashrc ] && . ~/.bashrc
+# Local Variables:
+# sh-basic-offset: 2
+# indent-tabs-mode: nil
+# End:

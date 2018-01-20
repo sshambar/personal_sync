@@ -1,4 +1,4 @@
-# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 # common.sh - common defines
 
 # Skip all for noninteractive shells.
@@ -17,3 +17,7 @@ alias h=history 2>/dev/null
 if [ "${EUID:-}" != 0 ] ; then
   alias dnf='dnf --cacheonly' 2>/dev/null
 fi
+# Local Variables:
+# sh-basic-offset: 2
+# indent-tabs-mode: nil
+# End:

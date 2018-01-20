@@ -1,4 +1,4 @@
-# -*- tab-width: 2; indent-tabs-mode: nil -*- vim:ft=sh:et:sw=2:ts=2:sts=2
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 # emacs.sh - setup emacs aliases if we have the correct environment
 
 # Requires the following in ~/.emacs (or home-start.el)
@@ -11,6 +11,8 @@
 #  ;; export socket-dir to shells
 #  (if (not server-use-tcp)
 #      (setenv "MYEC_SERVER_SOCKDIR" server-socket-dir)))
+
+[ -n "$(command -v ediff)" ] && export MERGE=ediff
 
 # Skip all for noninteractive shells.
 [ ! -t 0 ] && return
@@ -86,3 +88,7 @@ setup_emacs() {
 
 setup_emacs
 unset -f setup_emacs
+# Local Variables:
+# sh-basic-offset: 2
+# indent-tabs-mode: nil
+# End:
