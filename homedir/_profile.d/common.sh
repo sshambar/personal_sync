@@ -6,17 +6,12 @@
 
 function scr() {
   local args
-  if [ "$*" == "" ]; then args="-U -R"; else args="-U $*"; fi
-  script -q -c "screen $args" /dev/null
+  [ -z "$1" ] && args="-d -RR"
+  command screen -U $args "$@"
 }
 
 # nice shortcuts
 alias h=history 2>/dev/null
-
-# use dnf cache files if not running as root
-if [ "${EUID:-}" != 0 ] ; then
-  alias dnf='dnf --cacheonly' 2>/dev/null
-fi
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
