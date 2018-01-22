@@ -88,6 +88,7 @@ setup_emacs() {
 
 setup_emacs
 unset -f setup_emacs
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
