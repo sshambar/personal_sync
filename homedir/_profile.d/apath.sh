@@ -1,5 +1,5 @@
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
-# apath (link apath and zpath to ~/.profile.d to use)
+# apath.sh - path add functions (add zpath.sh for cleanup)
 
 # User specific aliases and functions
 remove_path() {
@@ -37,8 +37,10 @@ add_root_path() {
   # <directory> [ "before" ]
   local j=$1
   [ ! -d "$j" ] && return
+  [ "${j%/}" = "$j" ] && j="$j/"
   add_path PATH "${j}bin" "$2"
-  add_path LD_LIBRARY_PATH "${j}lib" "$2"
+  # skip system library paths
+  [ "$j" = / -o "$j" = /usr/ ] || add_path LD_LIBRARY_PATH "${j}lib" "$2"
   add_path MANPATH "${j}share/man" "$2"
   add_path INFOPATH "${j}share/info" "$2"
 }
@@ -47,7 +49,13 @@ add_root_path() {
 export PATH LD_LIBRARY_PATH MANPATH INFOPATH
 
 # basic paths
-for i in / /usr/ ; do add_root_path $i; done
+for i in /usr /; do add_root_path $i; done
+
+# cleanup
+[ -z "$LD_LIBRARY_PATH" ] && unset LD_LIBRARY_PATH
+[ -z "$MANPATH" ] && unset MANPATH
+[ -z "$INFOPATH" ] && unset INFOPATH
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
