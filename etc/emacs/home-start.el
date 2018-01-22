@@ -526,3 +526,8 @@ of an error, just add the package to a list of missing packages."
   (add-to-list 'auto-mode-alist '("\\.php\\'" . web-mode))
   )
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Magit (ELPA package, package-initialize first)
+(when (fboundp 'magit-status)
+  (global-set-key (kbd "C-x g") 'magit-status)
+  )
