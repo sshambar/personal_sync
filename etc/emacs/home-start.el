@@ -506,7 +506,7 @@ of an error, just add the package to a list of missing packages."
 
 ;; Use secure connection to ELPA
 (setq package-archives '(("gnu" . "https://elpa.gnu.org/packages/")
-			 ("melpa" . "https://melpa.org/packages/")))
+			 ("melpa" . "https://stable.melpa.org/packages/")))
 
 ;; Re-init with updated package-directory-list
 (when (fboundp 'package-initialize) (package-initialize))
