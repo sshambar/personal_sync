@@ -12,6 +12,7 @@ function scr() {
 
 # nice shortcuts
 alias h=history 2>/dev/null
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil

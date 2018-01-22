@@ -23,6 +23,7 @@ if [ -n "$BASH_VERSION" ]; then
 else
   PS1="[$USER@\\h \\W]\\$ "
 fi
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
