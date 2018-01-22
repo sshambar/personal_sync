@@ -7,6 +7,7 @@
 
 # Get the aliases and functions
 [ -r ~/.bashrc ] && . ~/.bashrc
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil

@@ -12,6 +12,7 @@ for i in ~/.profile.d/*.sh; do
   if [ -n "$PS1" ]; then . "$i"; else . "$i" >/dev/null; fi
 done
 unset i
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
