@@ -49,7 +49,7 @@ add_root_path() {
 export PATH LD_LIBRARY_PATH MANPATH INFOPATH
 
 # basic paths
-for i in /usr /; do add_root_path $i; done
+for i in /usr/local /usr /; do add_root_path $i; done
 
 # cleanup
 [ -z "$LD_LIBRARY_PATH" ] && unset LD_LIBRARY_PATH
