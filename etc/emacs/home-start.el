@@ -1,4 +1,4 @@
-;; Site wide settings for all users
+;;; Site wide settings for all users   -*- lexical-binding:t -*-
 
 ;; Identify what parts of your `.emacs' take so long. You can do
 ;; this e.g. by starting emacs with "emacs -q", set up your
@@ -86,7 +86,7 @@ of an error, just add the package to a list of missing packages."
  ;; don't offer migration of the init file
  (setq load-home-init-file t)
  (setq modeline-3d-p nil)
-)
+ )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; X Mode
@@ -139,13 +139,13 @@ of an error, just add the package to a list of missing packages."
 
 ;; add apropos help about variables (bind `C-h A' to `apropos-variable')
 (GNUEmacs
-    (define-key help-map (kbd "A") 'apropos-variable))
+ (define-key help-map (kbd "A") 'apropos-variable))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Time
 
 ;; (setq display-time-form-list (quote (date time)))
-(if (fboundp 'display-time) 
+(if (fboundp 'display-time)
     (progn
       (setq display-time-string-forms '(12-hours ":" minutes am-pm))
       (display-time)
@@ -155,31 +155,31 @@ of an error, just add the package to a list of missing packages."
 ;; Paren Mode
 
 (when (try-require 'paren)
-    (GNUEmacs
-        (show-paren-mode t))
-    (XEmacs
-        (paren-set-mode 'paren)))
+  (GNUEmacs
+   (show-paren-mode t))
+  (XEmacs
+   (paren-set-mode 'paren)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Added Function
 
 (defun switch-display-other-window (n) "Switch to other window and kill others"
-  (interactive "p")
-  (other-window n)
-  (delete-other-windows))
+       (interactive "p")
+       (other-window n)
+       (delete-other-windows))
 
 (defun justify-c-comment () "move a C comment to right margin"
-  (interactive)
-  (save-excursion
-    (end-of-line)
-    (search-backward "/*")
-    (delete-horizontal-space)
-    (end-of-line)
-    (setq addn (- 79 (current-column)))
-    (search-backward "/*")
-    (while (> addn 0)
-      (insert ? )
-      (setq addn (1- addn)))))
+       (interactive)
+       (save-excursion
+         (end-of-line)
+         (search-backward "/*")
+         (delete-horizontal-space)
+         (end-of-line)
+         (setq addn (- 79 (current-column)))
+         (search-backward "/*")
+         (while (> addn 0)
+           (insert ? )
+           (setq addn (1- addn)))))
 
 (defun my-list-colors-display (&optional list)
   "Modified `list-colors-display'."
@@ -202,8 +202,8 @@ of an error, just add the package to a list of missing packages."
           (put-text-property s (point) 'face
                              (cons 'background-color (car list)))
           (setq s (point))
-          (insert "  " (car list) 
-                  (if  window-system "" 
+          (insert "  " (car list)
+                  (if  window-system ""
                     (concat " ("(car  (tty-color-desc (car list))) ")") ) "\n")
           (put-text-property s (point) 'face
                              (cons 'foreground-color (car list)))
@@ -218,7 +218,7 @@ of an error, just add the package to a list of missing packages."
 
 ;; XEmacs default for moving point to a given line number
 (GNUEmacs
-    (global-set-key (kbd "M-g") 'goto-line))
+ (global-set-key (kbd "M-g") 'goto-line))
 
 (global-set-key (kbd "M-G") 'what-line)
 (global-set-key "\C-c\C-f" 'set-fill-column)
@@ -230,7 +230,7 @@ of an error, just add the package to a list of missing packages."
 (global-set-key [f11] 'indent-region)
 (global-set-key [f12] 'help)
 (global-set-key [(meta backspace)] 'backward-kill-word)
-        
+
 (global-set-key [(meta r)] 'replace-string)
 (global-set-key [(meta g)] 'fill-paragraph)
 
@@ -241,9 +241,8 @@ of an error, just add the package to a list of missing packages."
 
 ;; DEL key
 (setq delete-key-deletes-forward t)
-;(keyboard-translate ?\C-h ?\C-?)
-;(keyboard-translate ?\C-? ?\C-h)
-
+;;(keyboard-translate ?\C-h ?\C-?)
+;;(keyboard-translate ?\C-? ?\C-h)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Scroll Wheel
@@ -261,26 +260,22 @@ of an error, just add the package to a list of missing packages."
     (global-set-key [(mouse-5)] 'my-scroll-up-some-lines)
     (define-key global-map [(button4)] 'my-scroll-down-some-lines)
     (define-key global-map [(button5)] 'my-scroll-up-some-lines))
-)
+ )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Default Modes
+;; Defaults
 
 (setq fill-column 75)
-(add-hook 'text-mode-hook
-	  (lambda ()
-	    (auto-fill-mode 1)
-	    ) t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; GIT
 
 (defadvice vc-dir-prepare-status-buffer (before my-vcs-goto-top-directory activate compile)
-    (let* ((backend (ad-get-arg 2))
-           (vcs-dir (ad-get-arg 1))
-           (vcs-top-dir (vc-call-backend backend 'responsible-p vcs-dir)))
-      (when (stringp vcs-top-dir)
-        (ad-set-arg 1 vcs-top-dir))))
+  (let* ((backend (ad-get-arg 2))
+         (vcs-dir (ad-get-arg 1))
+         (vcs-top-dir (vc-call-backend backend 'responsible-p vcs-dir)))
+    (when (stringp vcs-top-dir)
+      (ad-set-arg 1 vcs-top-dir))))
 
 (let ((git-el "/usr/share/doc/git-core-doc/contrib/emacs"))
   (when (file-directory-p git-el)
@@ -289,76 +284,124 @@ of an error, just add the package to a list of missing packages."
     (autoload 'git-status "git" "Entry point into git-status mode." t)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Lisp Mode
+
+(defun my-text-mode-hook ()
+  "Hook to setup defaults in Text mode"
+  (interactive)
+  (auto-fill-mode 1)
+  )
+
+(add-hook 'text-mode-hook 'my-text-mode-hook)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Lisp Mode
+
+(defun my-emacs-lisp-mode-hook ()
+  "Hook to setup defaults in Emacs Lisp mode"
+  (interactive)
+  ;; Use spaces, not tabs.
+  (setq indent-tabs-mode nil)
+  ;; Pretty-print eval'd expressions.
+  (define-key emacs-lisp-mode-map
+    "\C-x\C-e" 'pp-eval-last-sexp)
+  ;;(define-key emacs-lisp-mode-map
+  ;;  "\r" 'reindent-then-newline-and-indent))
+  )
+
+(add-hook 'emacs-lisp-mode-hook 'my-emacs-lisp-mode-hook)
+(add-hook 'emacs-lisp-mode-hook 'eldoc-mode)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; C Mode
 
 (add-to-list 'auto-mode-alist '("\\.pc\\'" . c-mode) t)
 (add-to-list 'auto-mode-alist '("\\.module\\'" . c-mode) t)
 
-(add-hook 'c-mode-hook
-	  (lambda ()
-            (setq show-trailing-whitespace t)
-	    ;; no tabs, 2 chars
-	    ;;(c-set-style "gnu")
-	    ;; no tabs, 5 chars
-	    ;;(c-set-style "K&R")
-	    ;; tab indent, 8 chars
-	    ;;(c-set-style "python")
-	    (c-set-style "gnu")
-            (setq indent-tabs-mode nil)
-	    (setq c-basic-offset 8)
-	    ) t)
+(defun my-c-mode-common-hook ()
+  "Hook to setup defaults in C-like modes"
+  (interactive)
+  (setq show-trailing-whitespace t)
+  ;;(setq indent-tabs-mode nil)
+  ;;(setq c-basic-offset 8)
+  ;; no tabs, 2 chars
+  (c-set-style "gnu")
+  ;; no tabs, 5 chars
+  ;;(c-set-style "K&R")
+  ;; tab indent, 8 chars
+  ;;(c-set-style "python")
+  ;; guess indentation...
+  (c-guess)
+  )
+
+(add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Java Mode
 
-(add-hook 'java-mode-hook
-	  (lambda ()
-            (setq indent-tabs-mode t)
-	    (setq c-basic-offset 8)
-            (setq show-trailing-whitespace t)
-	    ) t)
+(defun my-java-mode-hook ()
+  "Hook to setup defaults in Java mode"
+  (interactive)
+  (setq indent-tabs-mode t)
+  (setq c-basic-offset 8)
+  (setq show-trailing-whitespace t)
+  )
+
+(add-hook 'java-mode-hook 'my-java-mode-hook)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Html Mode
+;; HTML Mode
 
-;(setq mumamo-chunk-coloring 10)
+;;(setq mumamo-chunk-coloring 10)
 
 (add-to-list 'auto-mode-alist '("\\.xml\\'" . html-mode) t)
 
-(add-hook 'html-mode-hook
-          (lambda ()
-            (setq sgml-basic-offset 4)
-            (setq indent-tabs-mode t)
-            (setq show-trailing-whitespace t)
-            ) t)
+(defun my-html-mode-hook ()
+  "Hook to setup defaults in HTML mode"
+  (interactive)
+  (setq sgml-basic-offset 4)
+  (setq indent-tabs-mode t)
+  (setq show-trailing-whitespace t)
+  )
+
+(add-hook 'html-mode-hook 'my-html-mode-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CSS Mode
 
-(add-hook 'css-mode-hook
-	  (lambda ()
-	    (setq css-indent-offset 2)
-	    ) t)
+(defun my-css-mode-hook ()
+  "Hook to setup defaults in CSS mode"
+  (interactive)
+  (setq css-indent-offset 2)
+  )
+
+(add-hook 'css-mode-hook 'my-css-mode-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Javascript Mode
 
-(add-hook 'js-mode-hook
-	  (lambda ()
-	    (setq js-indent-level 2)
-	  ) t)
+(defun my-js-mode-hook ()
+  "Hook to setup defaults in JS mode"
+  (interactive)
+  (setq js-indent-level 2)
+  )
+
+(add-hook 'js-mode-hook 'my-js-mode-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Shell Mode
 
-(add-hook 'sh-mode-hook
-	  (lambda ()
-	    (setq sh-indentation 2)
-	    (setq sh-basic-offset 2)
-            (setq indent-tabs-mode nil)
-            (setq show-trailing-whitespace t)
-	    ) t)
+(defun my-sh-mode-hook ()
+  "Hook to setup defaults in Shell mode"
+  (interactive)
+  (setq sh-indentation 2)
+  (setq sh-basic-offset 2)
+  (setq indent-tabs-mode nil)
+  (setq show-trailing-whitespace t)
+  )
+
+(add-hook 'sh-mode-hook 'my-sh-mode-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Conf Mode
@@ -373,12 +416,12 @@ of an error, just add the package to a list of missing packages."
 (setq font-lock-maximum-size nil)
 
 (XEmacs
-    ;; stop showing that annoying progress bar when fontifying
-    (setq progress-feedback-use-echo-area nil)
+ ;; stop showing that annoying progress bar when fontifying
+ (setq progress-feedback-use-echo-area nil)
 
-    ;; enable Font Lock mode
-    ;(font-lock-mode))
-)
+ ;; enable Font Lock mode
+ ;;(font-lock-mode))
+ )
 
 ;;(turn-on-font-lock)
 
@@ -408,7 +451,7 @@ of an error, just add the package to a list of missing packages."
   (make-directory "~/.emacs.d/backups/" t)
   ;; Put autosave files (ie #foo#) and backup files (ie foo~) in ~/.emacs.d/.
   (setq auto-save-file-name-transforms (quote ((".*" "~/.emacs.d/autosaves/" t))))
-  ; keep hard links on orig files
+  ;; keep hard links on orig files
   (setq backup-by-copying-when-linked t)
   (setq backup-directory-alist (quote (("." . "~/.emacs.d/backups/")))))
 
@@ -461,19 +504,22 @@ of an error, just add the package to a list of missing packages."
   (global-set-key "\e[1;14D" [M-S-C-left])
   (global-set-key "\e[1;14F" [M-S-C-end])
   (global-set-key "\e[1;14H" [M-S-C-home])
-)
+  )
 
-;(add-hook 'term-setup-hook
-;	  (lambda ()
-;	    (when (fboundp 'terminal-init-xterm)
-;	      (add-xterm-meta-cursors))
-;	    (when (and (fboundp 'terminal-init-screen)
-;		       (boundp 'xterm-function-map))
-;	      ;; merge xterm-function-map
-;	      (let ((map (copy-keymap xterm-function-map)))
-;		(set-keymap-parent map (keymap-parent input-decode-map))
-;		(set-keymap-parent input-decode-map map)))
-;	    ))
+(defun my-term-setup-hook ()
+  "Hook for default terminal setup"
+  (interactive)
+  (when (fboundp 'terminal-init-xterm)
+    (add-xterm-meta-cursors))
+  (when (and (fboundp 'terminal-init-screen)
+             (boundp 'xterm-function-map))
+    ;; merge xterm-function-map
+    (let ((map (copy-keymap xterm-function-map)))
+      (set-keymap-parent map (keymap-parent input-decode-map))
+      (set-keymap-parent input-decode-map map)))
+  )
+
+;;(add-hook 'term-setup-hook 'my-term-setup-hook)
 
 (defun terminal-init-screen ()
   "Terminal initialization function for screen."
@@ -494,7 +540,7 @@ of an error, just add the package to a list of missing packages."
 
 ;; Start server so shell commands can talk to emacs
 (when (and (fboundp 'server-start)
-	   (not (zerop (length (getenv-internal "MYEC_SERVER_NAME")))))
+           (not (zerop (length (getenv-internal "MYEC_SERVER_NAME")))))
   (setq server-name (getenv-internal "MYEC_SERVER_NAME"))
   (server-start)
   ;; export socket-dir to shells
@@ -506,7 +552,7 @@ of an error, just add the package to a list of missing packages."
 
 ;; Use secure connection to ELPA
 (setq package-archives '(("gnu" . "https://elpa.gnu.org/packages/")
-			 ("melpa" . "https://stable.melpa.org/packages/")))
+                         ("melpa" . "https://stable.melpa.org/packages/")))
 
 ;; Re-init with updated package-directory-list
 (when (fboundp 'package-initialize) (package-initialize))
@@ -531,3 +577,7 @@ of an error, just add the package to a list of missing packages."
 (when (fboundp 'magit-status)
   (global-set-key (kbd "C-x g") 'magit-status)
   )
+;; Local Variables:
+;; indent-tabs-mode: nil
+;; tab-width: 2
+;; End:
