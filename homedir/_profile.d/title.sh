@@ -6,20 +6,23 @@
 
 if [ -n "$BASH_VERSION" ]; then
   PS1="[\u@\h \W]\\$ "
-
+  # on screen, use title (set hardstatus to use %t so can format it)
+  [[ "$TERM" =~ ^screen ]] && pfmt='printf "\033k%s\033\\"' || \
+      pfmt='printf "\033]2;%s\033\\"'
   case $TERM in
     xterm*|screen*)
       if [[ "$BASH_VERSION" =~ ^3. ]]; then
-        PROMPT_COMMAND='printf "\033]2;%s@%s:%s\033\\" "$USER" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}"'
+        PROMPT_COMMAND="$pfmt"' "$USER@${HOSTNAME%%.*}:${PWD/#$HOME/~}"'
       else
-        PROMPT_COMMAND='printf "\033]2;%s@%s:%s\033\\" "$USER" "${HOSTNAME%%.*}" "${PWD/#$HOME/\~}"'
+        PROMPT_COMMAND="$pfmt"' "$USER@${HOSTNAME%%.*}:${PWD/#$HOME/\~}"'
       fi
-      telnet() { printf "\033]2;%s\033\\" "telnet $*"; command telnet "$@"; }
-      ssh() { printf "\033]2;%s\033\\" "ssh $*"; command ssh "$@"; }
+      eval 'telnet() { '"$pfmt"' "telnet $*"; command telnet "$@"; }'
+      eval 'ssh() { '"$pfmt"' "ssh $*"; command ssh "$@"; }'
       ;;
     *)
       ;;
   esac
+  unset pfmt
 else
   PS1="[$USER@\\h \\W]\\$ "
 fi
