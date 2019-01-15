@@ -574,6 +574,15 @@ of an error, just add the package to a list of missing packages."
   (add-to-list 'auto-mode-alist '("\\.php\\'" . web-mode))
   )
 
+(defun my-web-mode-common-hook ()
+  "Hook to setup defaults in Web modes"
+  (interactive)
+  ;; no tabs
+  ;;(setq indent-tabs-mode nil)
+  (setq web-mode-code-indent-offset 8)
+  )
+(add-hook 'web-mode-hook 'my-web-mode-common-hook)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Magit (ELPA package, package-initialize first)
 (when (fboundp 'magit-status)
