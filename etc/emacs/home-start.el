@@ -1,5 +1,7 @@
 ;;; Site wide settings for all users   -*- lexical-binding:t -*-
 
+;; Copy/link to /usr/local/share/emacs/site-lisp/site-start.d
+;;
 ;; Identify what parts of your `.emacs' take so long. You can do
 ;; this e.g. by starting emacs with "emacs -q", set up your
 ;; load-path, and then evaluate
@@ -19,11 +21,11 @@
 ;; Source for good .emacs http://www.mygooglest.com/fni/dot-emacs.html
 ;; XXX Go and see http://stackoverflow.com/questions/298065/which-are-the-gnu-emacs-modes-extensions-you-cant-live-without
 
+;; Still need to put this in personal .emacs for it to work
+;(setq inhibit-splash-screen t)
+
 ;; don't truncate the message log buffer when it becomes large
 (setq message-log-max t)
-
-;; yes, we know...
-(setq inhibit-splash-screen t)
 
 (when (file-directory-p "~/.emacs.d/site-lisp")
   (add-to-list 'load-path "~/.emacs.d/site-lisp"))
@@ -333,7 +335,7 @@ of an error, just add the package to a list of missing packages."
   ;; guess indentation...
   (c-guess)
   )
-
+(setq c-guess-region-max 5000)
 (add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -462,8 +464,8 @@ of an error, just add the package to a list of missing packages."
 ;; Default Theme
 
 (if (and (boundp 'custom-theme-load-path)
-         (file-readable-p "/etc/emacs/home-dark-theme.el"))
-    (progn (add-to-list 'custom-theme-load-path "/etc/emacs")
+         (file-readable-p "/usr/local/share/emacs/site-lisp/themes/home-dark-theme.el"))
+    (progn (add-to-list 'custom-theme-load-path "/usr/local/share/emacs/site-lisp/themes")
            (load-theme 'home-dark t))
   ;; fallback
   (custom-set-faces
