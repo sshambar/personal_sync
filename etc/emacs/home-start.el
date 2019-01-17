@@ -474,6 +474,20 @@ of an error, just add the package to a list of missing packages."
    '(modeline-mousable ((t (:foreground "red" :background "midnightblue"))) t)
    '(show-paren-match ((((class color)) (:background "DarkOliveGreen"))))))
 
+;; disable italic/oblique in all faces
+(defun my/deitalic (&optional faces)
+  "Set the slant (italic/oblique) property of FACES to `normal'.
+If FACES is not provided or nil, use `face-list' instead."
+  (interactive)
+  (mapc (lambda (face)
+          (when (member (face-attribute face :slant) '(italic oblique))
+            (set-face-attribute face nil :slant 'normal)))
+        (or faces (face-list))))
+(my/deitalic)
+
+;; dont use underline for italic if font doesn't support it.
+(set-face-attribute 'italic nil :underline nil)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Terminal tweaks
 
