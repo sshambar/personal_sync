@@ -2,7 +2,7 @@
 # -*- mode: shell-script; fill-column: 78 -*-
 # ex: filetype=sh
 #
-# manage-dnskeys v0.9 Manage bind DNSKEYs via cron
+# manage-dnskeys v1.0 Manage bind DNSKEYs via cron
 # Author: Scott Shambarger <devel@shambarger.net>
 #
 # Run with '-h' to get a quick summary of what this script does
@@ -28,10 +28,10 @@ SSH_REMOTE=${SSH_REMOTE:-sync:}
 VERBOSE=${VERBOSE:-}
 
 usage () {
-  echo "Usage: ${0##*/} [ <options> ]"
+  echo "Usage: ${0##*/} [ <options> ] [ <domain>... ]"
   echo "Manage DNSSEC keys under /var/named/dyndb-ldap"
-  echo "If run without args, runs dnssec-keymgr and dnssec-coverage"
-  echo "  in each keys directory"
+  echo "Runs dnssec-keygen (if needed), dnssec-keymgr and dnssec-coverage"
+  echo "   in each keys directory (or just for <domain>s if supplied)"
   echo "<options> can be any of:"
   echo "  help (or -h) - shows this help"
   echo "  verbose - show what's being done"
@@ -40,9 +40,57 @@ usage () {
   echo "  test - performs a dry-run (but still run coverage)"
 }
 
+# create keys with correct uid (private keys are chmod 600!)
+if [ $EUID -eq 0 ]; then
+  rpath=`realpath $0`
+  exec su -s /bin/bash -c "$(printf "%q " "$rpath" "$@")" $BIND_USER
+fi
+
+[ "$USER" != "$BIND_USER" ] && echo "Run as user $BIND_USER or root" && exit 1
+
+verbose() {
+  [ -n "$VERBOSE" ] && echo "$*"
+}
+
+manage_dir() { # <keydir>
+  local keydir=$1 prefix target domain haskeys
+  verbose "Processing keydir '$keydir'"
+  # update keys if necessary...
+  target=${keydir%/keys}
+  if [ -n "$sync" ]; then
+    prefix=${keydir#/var/named/}
+    verbose "Running rsync -aO $rsync_args --safe-links --timeout=300 '${SSH_REMOTE}$prefix' '$target'"
+    rsync -aO $rsync_args --safe-links --timeout=300 "${SSH_REMOTE}$prefix" "$target"
+    [ $? -ne 0 ] && echo "rsync failed for $keydir" && return
+  else
+    domain=${target##*/}
+    for key in "$keydir/K${domain}."*; do [ -f "$key" ] && haskeys=1; done
+    if [ -z "$haskeys" ]; then
+      # generate KSK
+      verbose "Running dnssec-keygen -f KSK -3 -a RSASHA256 -b 2048 -K <keydir> ${domain}."
+      [ -n "$test" ] || dnssec-keygen -f KSK -3 -a RSASHA256 -b 2048 -K "$keydir" "${domain}."
+      [ $? -ne 0 ] && echo "dnssec-keygen failed for $keydir" && return
+    fi
+    verbose "Running dnssec-keymgr -K <keydir>"
+    [ -n "$test" ] || dnssec-keymgr -K "$keydir"
+    [ $? -ne 0 ] && echo "dnssec-keymgr failed for $keydir" && return
+  fi
+
+  # now verify everything is ok
+  verbose "Running dnssec-coverage -m 604800 -K <keydir>"
+  dnssec-coverage -m 604800 -K "$keydir" > /dev/null
+  if [ $? -ne 0 ]; then
+    echo "dnssec-coverage indicates errors in $keydir"
+    dnssec-coverage -m 604800 -K "$keydir"
+  fi
+}
+
 test=
 sync=
 rsync_args=
+
+# empty * matches return nothing
+shopt -s nullglob
 
 for f in "$@"; do
   case $f in
@@ -62,51 +110,26 @@ for f in "$@"; do
       exit 0
       ;;
     *)
-      echo "Unknown option: $f"
-      usage
-      exit 1
+      # remove trailing .
+      f=${f%.}
+      for keydir in /var/named/dyndb-ldap/*/master/"$f"/keys; do
+        manage_dir "$keydir"
+      done
+      if [ -z "$keydir" ]; then
+        echo "No such domain: '$f'"
+        exit 1
+      fi
       ;;
   esac
 done
-
-# create keys with correct uid (private keys are chmod 600!)
-if [ $EUID -eq 0 ]; then
-  rpath=`realpath $0`
-  exec su -s /bin/bash -c "$(printf "%q " "$rpath" "$@")" $BIND_USER
-fi
-
-[ "$USER" != "$BIND_USER" ] && echo "Run as user $BIND_USER or root" && exit 1
-
-verbose() {
-  [ -n "$VERBOSE" ] && echo "$*"
-}
+# if specific domains, we're done
+[ -n "$keydir" ] && exit
 
 #
 # Run dnssec-keymgr for each of the dnsdb-ldap key directories...
 #
-shopt -s nullglob
 for keydir in /var/named/dyndb-ldap/*/master/*/keys; do
-  verbose "Processing keydir '$keydir'"
-  # update keys if necessary...
-  if [ -n "$sync" ]; then
-    prefix=${keydir#/var/named/}
-    target=${keydir%/keys}
-    verbose "Running rsync -aO $rsync_args --safe-links --timeout=300 '${SSH_REMOTE}$prefix' '$target'"
-    rsync -aO $rsync_args --safe-links --timeout=300 "${SSH_REMOTE}$prefix" "$target"
-    [ $? -ne 0 ] && echo "rsync failed for $keydir" && continue
-  else
-    verbose "Running dnssec-keymgr -K <keydir>"
-    [ -n "$test" ] || dnssec-keymgr -K "$keydir"
-    [ $? -ne 0 ] && echo "dnssec-keymgr failed for $keydir" && continue
-  fi
-
-  # now verify everything is ok
-  verbose "Running dnssec-coverage -m 604800 -K <keydir>"
-  dnssec-coverage -m 604800 -K "$keydir" > /dev/null
-  if [ $? -ne 0 ]; then
-    echo "dnssec-coverage indicates errors in $keydir"
-    dnssec-coverage -m 604800 -K "$keydir"
-  fi
+  manage_dir "$keydir"
 done
 
 # Local Variables:
