@@ -1,0 +1,245 @@
+#!/bin/sh
+# -*- mode: shell-script; fill-column: 78 -*-
+#
+# set-ddns v0.5 DDNS update script
+# Author: Scott Shambarger <devel@shambarger.net>
+#
+# Copyright 2019 Scott Shambarger.  All rights reserved.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Config (in /etc/ddns.conf or /opt/etc/ddns.conf):
+#   DDNS_NAME - name to set
+#   DDNS_KEY - nsupdate key
+#   DDNS_KEY_INT - (optional) alternate nsupdate key (for internal view)
+#
+# Optional config/overrides:
+#   USE_NVRAM - non-empty to use nvram to query WAN IP
+#   DDNS_SERVER - name server to query/update
+#   DDNS_SERVER_FALLBACK - fallback DNS ip address
+#   REMOTE_URL - url to query our apparent public ip
+#
+# Install location:
+#   DD-WRT: /opt/etc/config/ddns.wanup
+#   OpenWRT: /etc/hotplug.d/iface/90-homeddns
+#   Other: /usr/local/sbin/set-ddns (requires a cron to run)
+#
+# Required commands:
+#   nsupdate
+#   nvram or wget (for WAN IP)
+#   dig or nslookup (for current DNS)
+#
+CONFIG="/etc/ddns.conf"
+OPTCONFIG="/opt/etc/ddns.conf"
+DDNS_SERVER="www.shambarger.net"
+DDNS_SERVER_FALLBACK="209.76.109.246"
+REMOTE_URL="http://www.shambarger.net/remoteip"
+
+# path for optware
+[ -d "/opt/bin" ] && export PATH=/opt/bin:/opt/sbin:/opt/usr/sbin:${PATH}
+
+# required commands
+NSUPDATE_EXE="$(command -v nsupdate)"
+NSLOOKUP_EXE="$(command -v nslookup)"
+CURL_EXE="$(command -v curl)"
+WGET_EXE="$(command -v wget)"
+
+# optional commands
+NVRAM_EXE="$(command -v nvram)"
+DIG_EXE="$(command -v dig)"
+
+# get command name
+sn=${0##*/}
+# test stamp to see if we just ran
+STAMPFILE="/var/run/$sn.stamp"
+STAMPFILE6="/var/run/$sn.stamp6"
+
+err() {
+  logger -s -t "$sn" "$*"
+}
+
+log() {
+  logger -t "$sn" "$*"
+}
+
+# for hotplug on openwrt
+[ -z "$INTERFACE" -o "$INTERFACE" = "wan" ] && DNS4=1 || DNS4=
+[ -z "$INTERFACE" -o "$INTERFACE" = "wan6" ] && DNS6=1 || DNS6=
+[ -z "$ACTION" -o "$ACTION" = "ifup" -o "$ACTION" = "ifupdate" ] || exit 0
+
+# read config
+RCONFIG=$CONFIG
+[ ! -r "$RCONFIG" ] && RCONFIG=$OPTCONFIG
+[ ! -r "$RCONFIG" ] && err "Unable to read $CONFIG or $OPTCONFIG" && exit 1
+. "$RCONFIG"
+
+[ -z "$NSUPDATE_EXE" ] && err "Missing nsupdate command" && exit 6
+[ -z "$DIG_EXE" -a -z "$NSLOOKUP_EXE" ] && err "Missing dig or nslookup command" && exit 6
+if [ -n "$USE_NVRAM" ] && [ -z "$NVRAM_EXE" ]; then
+  err "Missing nvram command" && exit 6
+elif [ -z "$CURL_EXE" ] && [ -z "$WGET_EXE" ]; then
+  err "Missing curl or wget command" && exit 6
+fi
+
+# validate config
+[ -z "$DDNS_NAME" -o -z "$DDNS_KEY" ] && err "Some config values are missing" && exit 2
+
+# check for duplicate runs
+if [ -n "$DNS4" ]; then
+  STAMP=$(find "$STAMPFILE" -mmin 1 2>/dev/null)
+  [ -n "$STAMP" ] && DNS4=
+fi
+if [ -n "$DNS6" ]; then
+  STAMP=$(find "$STAMPFILE6" -mmin 1 2>/dev/null)
+  [ -n "$STAMP" ] && DNS6=
+fi
+[ -n "$DNS4" -o -n "$DNS6" ] || exit 0
+
+resolve_host() {
+  # <host> <dns-server>
+  local host=$1 dns_server=$2 ip_addr=
+
+  if [ -n "$DIG_EXE" ]; then
+    ip_addr=$("$DIG_EXE" 2>/dev/null "@$dns_server" +short +retry=0 +time=10 A "$host")
+    [ $? -ne 0 ] && ip_addr=
+  fi
+
+  # fallback to nslookup
+  if [ -z "$ip_addr" -a -n "$NSLOOKUP_EXE" ]; then
+    set -o pipefail
+    ip_addr=$("$NSLOOKUP_EXE" 2>/dev/null "$host" "$dns_server" | grep '^Address' | tail -1 | sed 's/.*: \([0-9.]*\).*/\1/')
+    [ $? -ne 0 ] && ip_addr=
+    set +o pipefail
+  fi
+  echo $ip_addr
+}
+
+update_dns () {
+  # <view> <key> <rrec>
+  "$NSUPDATE_EXE" -t 20 -R /dev/urandom -v << EOF
+server $server_ip
+update delete $DDNS_NAME $3
+update add $DDNS_NAME 600 $3 $wan_ip
+key $1 $2
+send
+EOF
+}
+
+resolve_host6() {
+  # <host> <dns-server>
+  local host=$1 dns_server=$2 ip_addr=
+
+  ip_addr=$("$DIG_EXE" 2>/dev/null "@$dns_server" +short +retry=0 +time=10 AAAA "$host")
+  [ $? -ne 0 ] && ip_addr=
+
+  echo $ip_addr
+}
+
+log "Setting up DNS for $DDNS_NAME"
+
+# get server addr from google
+server_ip=$(resolve_host "$DDNS_SERVER" 8.8.8.8)
+
+# failsafe
+[ -z "$server_ip" ] && server_ip=$DDNS_SERVER_FALLBACK
+
+if [ -n "$DNS4" ]; then
+
+  # discover current wan ip
+  wan_ip=
+  if [ -n "$USE_NVRAM" -a -n "$NVRAM_EXE" ]; then
+    wan_ip=$("$NVRAM_EXE" get wan_ipaddr)
+  elif [ -n "$CURL_EXE" ]; then
+    wan_ip=$("$CURL_EXE" 2>/dev/null -4 -o - "$REMOTE_URL")
+  elif [ -n "$WGET_EXE" ]; then
+    wan_ip=$("$WGET_EXE" 2>/dev/null -4 -q -O - "$REMOTE_URL")
+    # busybox fallback
+    [ -z "$wan_ip" ] && wan_ip=$("$WGET_EXE" 2>/dev/null -q -O - "$REMOTE_URL")
+  fi
+
+  [ -z "$wan_ip" ] && err "Unable to discover WAN ipv4 address" && exit 3
+
+  # discover current ddns
+  curr_ip=$(resolve_host "$DDNS_NAME" "$server_ip")
+
+  if [ -z "$curr_ip" ]; then
+    err "Unable to lookup $DDNS_NAME"
+  elif [ "$wan_ip" = "$curr_ip" ]; then
+    log "DNS address correct as $curr_ip"
+    wan_ip=
+  fi
+
+  if [ -n "$wan_ip" ]; then
+    log "Updating $DDNS_NAME with $wan_ip"
+    update_dns $DDNS_KEY A
+    [ $? -ne 0 ] && err "Update of $DDNS_NAME A record failed" && exit 5
+    if [ -n "$DDNS_KEY_INT" ]; then
+      log "Updating internal $DDNS_NAME with $wan_ip"
+      update_dns $DDNS_KEY_INT A
+      # don't exit on internal update failure
+      [ $? -ne 0 ] && err "Update of internal $DDNS_NAME A record failed"
+    fi
+
+    log "Update of $DDNS_NAME A done"
+  fi
+
+  touch "${STAMPFILE}"
+fi
+
+# we need dig and (wget or curl) for ipv6
+[ -z "$WGET_EXE" ] && [ -z "$CURL_EXE" ] && exit 0
+[ -n "$DIG_EXE" ] && [ -n "$DNS6" ] || exit 0
+
+# if interface just came up, wait for ipv6 DaD to complete
+#[ -n "$INTERFACE" ] && sleep 5
+sleep 5
+
+# discover current wan ipv6
+wan_ip=$("$CURL_EXE" 2>/dev/null -6 -o - "$REMOTE_URL")
+[ -z "$wan_ip" ] && wan_ip=$("$WGET_EXE" 2>/dev/null -6 -q -O - "$REMOTE_URL")
+
+[ -z "$wan_ip" ] && err "Unable to discover WAN ipv6 interface" && exit 3
+
+# discover current ddns
+curr_ip=$(resolve_host6 "$DDNS_NAME" "$server_ip")
+
+if [ -z "$curr_ip" ]; then
+  err "Unable to lookup $DDNS_NAME"
+elif [ "$wan_ip" = "$curr_ip" ]; then
+  log "DNS address correct as $curr_ip"
+  wan_ip=
+fi
+
+if [ -n "$wan_ip" ]; then
+  log "Updating $DDNS_NAME with $wan_ip"
+  update_dns $DDNS_KEY AAAA
+  [ $? -ne 0 ] && err "Update of $DDNS_NAME AAAA record failed" && exit 5
+  if [ -n "$DDNS_KEY_INT" ]; then
+    log "Updating internal $DDNS_NAME with $wan_ip"
+    update_dns $DDNS_KEY_INT AAAA
+    # don't exit on internal update failure
+    [ $? -ne 0 ] && err "Update of internal $DDNS_NAME AAAA record failed"
+  fi
+
+  log "Update of $DDNS_NAME AAAA done"
+fi
+
+touch "${STAMPFILE6}"
+
+# Local Variables:
+# mode: sh
+# sh-basic-offset: 2
+# sh-indentation: 2
+# indent-tabs-mode: nil
+# End:
