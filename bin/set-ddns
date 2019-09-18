@@ -1,7 +1,7 @@
 #!/bin/sh
 # -*- mode: shell-script; fill-column: 78 -*-
 #
-# set-ddns v0.5 DDNS update script
+# set-ddns v0.6 DDNS update script
 # Author: Scott Shambarger <devel@shambarger.net>
 #
 # Copyright 2019 Scott Shambarger.  All rights reserved.
@@ -66,11 +66,11 @@ STAMPFILE="/var/run/$sn.stamp"
 STAMPFILE6="/var/run/$sn.stamp6"
 
 err() {
-  logger -s -t "$sn" "$*"
+  [ -t 0 ] && echo >&2 "$*" || logger -s -p daemon.err -t "$sn" "$*"
 }
 
 log() {
-  logger -t "$sn" "$*"
+  [ -t 0 ] && echo "$*" || logger -p daemon.info -t "$sn" "$*"
 }
 
 # for hotplug on openwrt
@@ -118,7 +118,7 @@ resolve_host() {
   # fallback to nslookup
   if [ -z "$ip_addr" -a -n "$NSLOOKUP_EXE" ]; then
     set -o pipefail
-    ip_addr=$("$NSLOOKUP_EXE" 2>/dev/null "$host" "$dns_server" | grep '^Address' | tail -1 | sed 's/.*: \([0-9.]*\).*/\1/')
+    ip_addr=$("$NSLOOKUP_EXE" -querytype=A 2>/dev/null "$host" "$dns_server" | grep '^Address' | tail -1 | sed 's/.*: \([0-9.]*\).*/\1/')
     [ $? -ne 0 ] && ip_addr=
     set +o pipefail
   fi
