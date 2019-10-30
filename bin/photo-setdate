@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# photo-setup v0.5 - Attempts to repair file modified-date based on exif
+# photo-setdate v0.6 - Attempts to repair file modified-date based on exif
 # Author: Scott Shambarger <devel@shambarger.net>
 #
-# Copyright (C) 2018 Scott Shambarger
+# Copyright (C) 2019 Scott Shambarger
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -39,24 +39,15 @@
 # the target timezone and "touches" the file with that date.
 #
 
-# validates Bash 4+, or attempts to exec located alternate bash...
-bash_version() {
-  local v=${BASH_VERSION%%.*}
-  [[ $v -ge 4 ]] && return
-  [[ $MYBASH_CHECK ]] && echo "Bash v4+ required!" && exit 1
-  export MYBASH_CHECK=1
-  local dir
-  for dir in /opt/local/bin /usr/local/bin; do
-    [ -x "$dir/bash" ] && exec "$dir/bash" "${BASH_SOURCE[0]}" "$@"
-  done
-  echo "Bash v4+ required!"
-  exit 1
-}
+log() { echo "$*"; }
+req_exe() { ! command -v "$*" >/dev/null && log "Where is '$*'?" && exit 1; }
 
-bash_version "$@"
+# validates Bash 4+
+[[ ${BASH_VERSION%%.*} -lt 4 ]] && { log "Bash v4+ required!" && exit 1; }
 
 # max secs that gps and orig-date can differ to consider them for comparison
-FUDGE_SECS=180
+FUDGE_SECS=${FUDGE_SECS:-180}
+EXIFTOOL=${EXIFTOOL:-exiftool}
 
 usage() {
   local prog=${0##*/}
@@ -65,11 +56,12 @@ usage() {
   echo "  options:"
   echo "    verbose - verbose logging"
   echo "    oldest=<file> - don't process older files (modify-time)"
+  echo "Overrides: EXIFTOOL='$EXIFTOOL' FUDGE_SECS=$FUDGE_SECS"
   exit
 }
 
 cmdecho() {
-  echo "  $*"
+  log "  $*"
 }
 
 TEST=
@@ -99,11 +91,13 @@ done
 
 [[ $1 ]] || usage
 
-[ -z "$OLDEST" -o -f "$OLDEST" ] || { echo "oldest ref $OLDEST missing!"
+[ -z "$OLDEST" -o -f "$OLDEST" ] || { log "oldest ref $OLDEST missing!"
                                       exit 1; }
 
+req_exe "$EXIFTOOL"
+
 verbose() {
-  [ -n "$VERBOSE" ] && echo "$*"
+  [ -n "$VERBOSE" ] && log "$*"
 }
 
 suggest_zones() {
@@ -565,19 +559,19 @@ file_zones() {
     case ${line%: *} in
       $gps_tag) gps=${line#*: };;
       $orig_tag) orig=${line#*: };;
-      *) echo "BUG: guess_offset: Unrecognized tag: ${line%: *}" && exit 11;;
+      *) log "BUG: guess_offset: Unrecognized tag: ${line%: *}" && exit 11;;
     esac
-  done < <(TZ=${ltz:-UTC} exiftool -s -s -d "%s" ${gps_tag:+-}${gps_tag} -${orig_tag} "$file")
+  done < <(TZ=${ltz:-UTC} "$EXIFTOOL" -s -s -d "%s" ${gps_tag:+-}${gps_tag} -${orig_tag} "$file")
 
   [[ $orig ]] || { verbose "No Date in $file"; return 0; }
 
   # with tz, just show origdate to compare with filename
   if [ -n "$tz" ]; then
-    echo "$file"
-    echo "    OrigDate: $(TZ=$tz get_date $orig)"
+    log "$file"
+    log "    OrigDate: $(TZ=$tz get_date $orig)"
     if [[ $gps ]]; then
-       echo "     GPSDate: $(TZ=$tz get_date $gps)"
-       [ $gps -ne $orig ] && echo "       ERROR: $((gps - orig))"
+       log "     GPSDate: $(TZ=$tz get_date $gps)"
+       [ $gps -ne $orig ] && log "       ERROR: $((gps - orig))"
     fi
     return 0
   fi
@@ -599,16 +593,16 @@ update_file() {
     *.jpg|*.jpeg) tag=DateTimeOriginal;;
     # mp4 is UTC already
     *.mp4|*.mpeg4) tag=CreateDate; ltz=UTC;;
-    *) echo "skipping $1"; return 0;;
+    *) log "skipping $1"; return 0;;
   esac
 
   # parse exif date for date (as unix-time)
   while read -r line; do
     case ${line%: *} in
       $tag) orig=${line#*: };;
-      *) echo "BUG: process_file: Unrecognized tag: ${line%: *}" && exit 10;;
+      *) log "BUG: process_file: Unrecognized tag: ${line%: *}" && exit 10;;
     esac
-  done < <(TZ=$ltz exiftool -s -s -d "%s" -${tag} "$1")
+  done < <(TZ=$ltz "$EXIFTOOL" -s -s -d "%s" -${tag} "$1")
   [[ $orig ]] || { verbose "No Date in $1"; return 0; }
 
   # check if file "almost" correct....
@@ -617,14 +611,14 @@ update_file() {
   [ $fdiff -lt 60 ] && { verbose "OK (${fdiff}s) - $1"; return 0; }
 
   # ok update file date
-  echo "$1"
-  echo "  New $(TZ=$tz get_date $orig)"
+  log "$1"
+  log "  New $(TZ=$tz get_date $orig)"
   verbose "  Cur $(TZ=$tz get_date $forig)"
   local fdate=$(TZ=$tz get_date $orig "%Y%m%d%H%M.%S")
   TZ=$tz $TEST touch -c -t "$fdate" "$1"
   if [ -z "$TEST" ]; then
     local fnew=$(get_mtime "$1")
-    echo "  Upd $(TZ=$tz get_date $fnew)"
+    log "  Upd $(TZ=$tz get_date $fnew)"
   fi
   return 0
 }
@@ -665,11 +659,11 @@ if [ -n "$GUESS" ]; then
   # GUESS MODE
   # now for each offset, display % of files, and likely TZ values
   for z in "${!zones[@]}"; do
-    echo "$(( (${zones["$z"]} * 100) / n ))% $z"
+    log "$(( (${zones["$z"]} * 100) / n ))% $z"
   done
   [ -n "$tz" ] && exit 0
-  [ -z "$z" ] && { echo "No files with GPS dates found!"; exit 0; }
-  echo "You can re-try guess with tz=<zone> to see dates that would be set"
+  [ -z "$z" ] && { log "No files with GPS dates found!"; exit 0; }
+  log "You can re-try guess with tz=<zone> to see dates that would be set"
   exit 0
 fi
 
