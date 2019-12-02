@@ -23,6 +23,7 @@
 
 ;; Still need to put this in personal .emacs for it to work
 ;(setq inhibit-splash-screen t)
+(setcdr command-line-args (cons "--no-splash" (cdr command-line-args)))
 
 ;; don't truncate the message log buffer when it becomes large
 (setq message-log-max t)
