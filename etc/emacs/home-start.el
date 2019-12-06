@@ -492,8 +492,14 @@ If FACES is not provided or nil, use `face-list' instead."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Terminal tweaks
 
-(defun add-xterm-meta-cursors ()
-  "Meta cursor keys for xterm."
+(defun my-linux-init ()
+  "Setup extra keys for linux console"
+  (global-set-key "\e[1;5A" [C-up])
+  (global-set-key "\e[1;5B" [C-down])
+  )
+
+(defun my-xterm-init ()
+  "Setup Meta cursor keys for xterm"
   (global-set-key "\e[1;9A" [M-up])
   (global-set-key "\e[1;9B" [M-down])
   (global-set-key "\e[1;9C" [M-right])
@@ -523,34 +529,25 @@ If FACES is not provided or nil, use `face-list' instead."
   (global-set-key "\e[1;14H" [M-S-C-home])
   )
 
-(defun my-term-setup-hook ()
-  "Hook for default terminal setup"
-  (interactive)
-  (when (fboundp 'terminal-init-xterm)
-    (add-xterm-meta-cursors))
-  (when (and (fboundp 'terminal-init-screen)
-             (boundp 'xterm-function-map))
-    ;; merge xterm-function-map
-    (let ((map (copy-keymap xterm-function-map)))
-      (set-keymap-parent map (keymap-parent input-decode-map))
-      (set-keymap-parent input-decode-map map)))
-  )
-
-;;(add-hook 'term-setup-hook 'my-term-setup-hook)
-
-(defun terminal-init-screen ()
-  "Terminal initialization function for screen."
-  ;; Use the xterm initialization code.
+(defun my-screen-init ()
+  "Setup screen like xterm"
   (try-require "term/xterm")
   (when (fboundp 'terminal-init-xterm)
-    (terminal-init-xterm))
-  )
+    (terminal-init-xterm)
+    (my-xterm-init)
+    ))
 
-(defun terminal-init-screen.xterm ()
-  "Terminal initialization function for screen.xterm."
-  ;; Use the xterm initialization code.
-  (terminal-init-screen)
-  )
+(defun my-tty-setup-hook ()
+  "Hook to setup tty modes"
+  (interactive)
+  (let ((term (if (fboundp 'tty-type)
+                 (tty-type (selected-frame))
+               (getenv "TERM" (selected-frame)))))
+    (if (string-equal "linux" term) (my-linux-init))
+    (if (string-match "xterm.*" term) (my-xterm-init))
+    (if (string-match "screen.*" term) (my-screen-init))
+    ))
+(add-hook 'tty-setup-hook 'my-tty-setup-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Server for shell aliases
