@@ -1,5 +1,7 @@
 ;;; Site wide settings for all users   -*- lexical-binding:t -*-
 
+;; PREFIX myhome- used for hooks.
+
 ;; Copy/link to /usr/local/share/emacs/site-lisp/site-start.d
 ;;
 ;; Identify what parts of your `.emacs' take so long. You can do
@@ -92,7 +94,7 @@ of an error, just add the package to a list of missing packages."
  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; X Mode
+;; XLaunch
 
 (defmacro XLaunch (&rest body)
   "Execute any number of forms if running under X Windows."
@@ -103,7 +105,7 @@ of an error, just add the package to a list of missing packages."
  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Text Mode
+;; TextLaunch
 
 (defmacro TextLaunch (&rest body)
   "Execute any number of forms if running in text mode."
@@ -155,37 +157,15 @@ of an error, just add the package to a list of missing packages."
       ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Paren Mode
+;; Added Functions
 
-(when (try-require 'paren)
-  (GNUEmacs
-   (show-paren-mode t))
-  (XEmacs
-   (paren-set-mode 'paren)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Added Function
-
-(defun switch-display-other-window (n) "Switch to other window and kill others"
+(defun myhome-display-other-window (n) "Switch to other window and kill others"
        (interactive "p")
        (other-window n)
        (delete-other-windows))
 
-(defun justify-c-comment () "move a C comment to right margin"
-       (interactive)
-       (save-excursion
-         (end-of-line)
-         (search-backward "/*")
-         (delete-horizontal-space)
-         (end-of-line)
-         (setq addn (- 79 (current-column)))
-         (search-backward "/*")
-         (while (> addn 0)
-           (insert ? )
-           (setq addn (1- addn)))))
-
-(defun my-list-colors-display (&optional list)
-  "Modified `list-colors-display'."
+(defun myhome-list-colors (&optional list)
+  "Modified `list-colors-display' showing color aliases."
   (interactive)
   (when (and (null list) (> (display-color-cells) 0))
     (setq list (mapcar 'car color-name-rgb-alist))
@@ -216,93 +196,67 @@ of an error, just add the package to a list of missing packages."
 ;; Added Keys
 
 ;; for my custom functions
-(global-set-key "\C-x4o" 'switch-display-other-window)
-(global-set-key "\C-t" 'justify-c-comment)
+(global-set-key (kbd "C-x 4 o") 'myhome-display-other-window)
 
 ;; XEmacs default for moving point to a given line number
 (GNUEmacs
  (global-set-key (kbd "M-g") 'goto-line))
 
 (global-set-key (kbd "M-G") 'what-line)
-(global-set-key "\C-c\C-f" 'set-fill-column)
-(global-set-key "\C-cf" 'auto-fill-mode)
-(global-set-key "\C-cg" 'goto-line)
-(global-set-key "\C-cd" 'my-from-dos)
-(global-set-key "\C-cs" 'shell)
-(global-set-key "\C-x\C-m" 'compile)
-(global-set-key [f11] 'indent-region)
-(global-set-key [f12] 'help)
-(global-set-key [(meta backspace)] 'backward-kill-word)
+(global-set-key (kbd "C-c C-f") 'set-fill-column)
+(global-set-key (kbd "C-c f") 'auto-fill-mode)
+(global-set-key (kbd "C-c g") 'goto-line)
+(global-set-key (kbd "C-c s") 'shell)
+(global-set-key (kbd "C-x C-m") 'compile)
+(global-set-key (kbd "<f11>") 'indent-region)
+(global-set-key (kbd "<f12>") 'help)
+(global-set-key (kbd "<M-backspace>") 'backward-kill-word)
 
-(global-set-key [(meta r)] 'replace-string)
-(global-set-key [(meta g)] 'fill-paragraph)
+(global-set-key (kbd "M-r") 'replace-string)
+(global-set-key (kbd "M-g") 'fill-paragraph)
 
-(global-set-key [(home)] 'beginning-of-buffer)
-(global-set-key [(end)] 'end-of-buffer)
+(global-set-key (kbd "<home>") 'beginning-of-buffer)
+(global-set-key (kbd "<end>") 'end-of-buffer)
 
-(global-set-key [(control meta _)] 'dabbrev-completion)
+(global-set-key (kbd "C-M-_") 'dabbrev-completion)
 
 ;; DEL key
 (setq delete-key-deletes-forward t)
 ;;(keyboard-translate ?\C-h ?\C-?)
 ;;(keyboard-translate ?\C-? ?\C-h)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Scroll Wheel
-
-(cond
- ((boundp 'mouse-wheel-mode) (mouse-wheel-mode 1))
- (t (setq my-scroll-interval 5)
-    (defun my-scroll-down-some-lines ()
-      (interactive)
-      (scroll-down my-scroll-interval))
-    (defun my-scroll-up-some-lines ()
-      (interactive)
-      (scroll-up my-scroll-interval))
-    (global-set-key [(mouse-4)] 'my-scroll-down-some-lines)
-    (global-set-key [(mouse-5)] 'my-scroll-up-some-lines)
-    (define-key global-map [(button4)] 'my-scroll-down-some-lines)
-    (define-key global-map [(button5)] 'my-scroll-up-some-lines))
- )
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Defaults
 
 (setq fill-column 75)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; GIT
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Paren Mode
 
-(defadvice vc-dir-prepare-status-buffer (before my-vcs-goto-top-directory activate compile)
-  (let* ((backend (ad-get-arg 2))
-         (vcs-dir (ad-get-arg 1))
-         (vcs-top-dir (vc-call-backend backend 'responsible-p vcs-dir)))
-    (when (stringp vcs-top-dir)
-      (ad-set-arg 1 vcs-top-dir))))
-
-(let ((git-el "/usr/share/doc/git-core-doc/contrib/emacs"))
-  (when (file-directory-p git-el)
-    (add-to-list 'load-path git-el)
-    (autoload 'git-blame-mode "git-blame" "Minor mode for incremental blame for Git." t)
-    (autoload 'git-status "git" "Entry point into git-status mode." t)))
+(when (try-require 'paren)
+  (GNUEmacs
+   (show-paren-mode t))
+  (XEmacs
+   (paren-set-mode 'paren)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lisp Mode
 
-(defun my-text-mode-hook ()
+(defun myhome-text-mode-hook ()
   "Hook to setup defaults in Text mode"
   (interactive)
   (auto-fill-mode 1)
   )
 
-(add-hook 'text-mode-hook 'my-text-mode-hook)
+(add-hook 'text-mode-hook 'myhome-text-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lisp Mode
 
-(defun my-emacs-lisp-mode-hook ()
+(defun myhome-emacs-lisp-mode-hook ()
   "Hook to setup defaults in Emacs Lisp mode"
   (interactive)
+  (eldoc-mode)
   ;; Use spaces, not tabs.
   (setq indent-tabs-mode nil)
   ;; Pretty-print eval'd expressions.
@@ -312,8 +266,7 @@ of an error, just add the package to a list of missing packages."
   ;;  "\r" 'reindent-then-newline-and-indent))
   )
 
-(add-hook 'emacs-lisp-mode-hook 'my-emacs-lisp-mode-hook)
-(add-hook 'emacs-lisp-mode-hook 'eldoc-mode)
+(add-hook 'emacs-lisp-mode-hook 'myhome-emacs-lisp-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; C Mode
@@ -321,10 +274,24 @@ of an error, just add the package to a list of missing packages."
 (add-to-list 'auto-mode-alist '("\\.pc\\'" . c-mode) t)
 (add-to-list 'auto-mode-alist '("\\.module\\'" . c-mode) t)
 
-(defun my-c-mode-common-hook ()
+(defun myhome-justify-c-comment () "move a C comment to right margin"
+       (interactive)
+       (save-excursion
+         (end-of-line)
+         (search-backward "/*")
+         (delete-horizontal-space)
+         (end-of-line)
+         (setq addn (- 79 (current-column)))
+         (search-backward "/*")
+         (while (> addn 0)
+           (insert ? )
+           (setq addn (1- addn)))))
+
+(defun myhome-c-mode-common-hook ()
   "Hook to setup defaults in C-like modes"
   (interactive)
   (setq show-trailing-whitespace t)
+  (local-set-key "\C-t" 'myhome-justify-c-comment)
   ;;(setq indent-tabs-mode nil)
   ;;(setq c-basic-offset 8)
   ;; no tabs, 2 chars
@@ -336,13 +303,14 @@ of an error, just add the package to a list of missing packages."
   ;; guess indentation...
   (c-guess)
   )
+(add-hook 'c-mode-common-hook 'myhome-c-mode-common-hook t)
+;; not in hook so can override
 (setq c-guess-region-max 5000)
-(add-hook 'c-mode-common-hook 'my-c-mode-common-hook)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Java Mode
 
-(defun my-java-mode-hook ()
+(defun myhome-java-mode-hook ()
   "Hook to setup defaults in Java mode"
   (interactive)
   (setq indent-tabs-mode t)
@@ -350,8 +318,7 @@ of an error, just add the package to a list of missing packages."
   (setq show-trailing-whitespace t)
   )
 
-(add-hook 'java-mode-hook 'my-java-mode-hook)
-
+(add-hook 'java-mode-hook 'myhome-java-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HTML Mode
@@ -360,7 +327,7 @@ of an error, just add the package to a list of missing packages."
 
 (add-to-list 'auto-mode-alist '("\\.xml\\'" . html-mode) t)
 
-(defun my-html-mode-hook ()
+(defun myhome-html-mode-hook ()
   "Hook to setup defaults in HTML mode"
   (interactive)
   (setq sgml-basic-offset 4)
@@ -368,34 +335,34 @@ of an error, just add the package to a list of missing packages."
   (setq show-trailing-whitespace t)
   )
 
-(add-hook 'html-mode-hook 'my-html-mode-hook)
+(add-hook 'html-mode-hook 'myhome-html-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CSS Mode
 
-(defun my-css-mode-hook ()
+(defun myhome-css-mode-hook ()
   "Hook to setup defaults in CSS mode"
   (interactive)
   (setq css-indent-offset 2)
   )
 
-(add-hook 'css-mode-hook 'my-css-mode-hook)
+(add-hook 'css-mode-hook 'myhome-css-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Javascript Mode
 
-(defun my-js-mode-hook ()
+(defun myhome-js-mode-hook ()
   "Hook to setup defaults in JS mode"
   (interactive)
   (setq js-indent-level 2)
   )
 
-(add-hook 'js-mode-hook 'my-js-mode-hook)
+(add-hook 'js-mode-hook 'myhome-js-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Shell Mode
 
-(defun my-sh-mode-hook ()
+(defun myhome-sh-mode-hook ()
   "Hook to setup defaults in Shell mode"
   (interactive)
   (setq sh-indentation 2)
@@ -404,7 +371,7 @@ of an error, just add the package to a list of missing packages."
   (setq show-trailing-whitespace t)
   )
 
-(add-hook 'sh-mode-hook 'my-sh-mode-hook)
+(add-hook 'sh-mode-hook 'myhome-sh-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Conf Mode
@@ -492,13 +459,13 @@ If FACES is not provided or nil, use `face-list' instead."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Terminal tweaks
 
-(defun my-linux-init ()
+(defun myhome-linux-init ()
   "Setup extra keys for linux console"
   (global-set-key "\e[1;5A" [C-up])
   (global-set-key "\e[1;5B" [C-down])
   )
 
-(defun my-xterm-init ()
+(defun myhome-xterm-init ()
   "Setup Meta cursor keys for xterm"
   (global-set-key "\e[1;9A" [M-up])
   (global-set-key "\e[1;9B" [M-down])
@@ -529,25 +496,25 @@ If FACES is not provided or nil, use `face-list' instead."
   (global-set-key "\e[1;14H" [M-S-C-home])
   )
 
-(defun my-screen-init ()
+(defun myhome-screen-init ()
   "Setup screen like xterm"
   (try-require "term/xterm")
   (when (fboundp 'terminal-init-xterm)
     (terminal-init-xterm)
-    (my-xterm-init)
+    (myhome-xterm-init)
     ))
 
-(defun my-tty-setup-hook ()
+(defun myhome-tty-setup-hook ()
   "Hook to setup tty modes"
   (interactive)
   (let ((term (if (fboundp 'tty-type)
                  (tty-type (selected-frame))
                (getenv "TERM" (selected-frame)))))
-    (if (string-equal "linux" term) (my-linux-init))
-    (if (string-match "xterm.*" term) (my-xterm-init))
-    (if (string-match "screen.*" term) (my-screen-init))
+    (if (string-equal "linux" term) (myhome-linux-init))
+    (if (string-match "xterm.*" term) (myhome-xterm-init))
+    (if (string-match "screen.*" term) (myhome-screen-init))
     ))
-(add-hook 'tty-setup-hook 'my-tty-setup-hook)
+(add-hook 'tty-setup-hook 'myhome-tty-setup-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Server for shell aliases
@@ -586,14 +553,14 @@ If FACES is not provided or nil, use `face-list' instead."
   (add-to-list 'auto-mode-alist '("\\.php\\'" . web-mode))
   )
 
-(defun my-web-mode-common-hook ()
+(defun myhome-web-mode-common-hook ()
   "Hook to setup defaults in Web modes"
   (interactive)
   ;; no tabs
   ;;(setq indent-tabs-mode nil)
   (setq web-mode-code-indent-offset 8)
   )
-(add-hook 'web-mode-hook 'my-web-mode-common-hook)
+(add-hook 'web-mode-hook 'myhome-web-mode-common-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Magit (ELPA package, package-initialize first)
