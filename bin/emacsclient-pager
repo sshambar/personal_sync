@@ -1,34 +1,32 @@
-#!/bin/sh
+#!/bin/bash
+
+TMPFILE=
+cleanup() {
+  [ -n "$TMPFILE" ] && rm -f "$TMPFILE"
+}
+trap cleanup 0
 
 # check how we were called
-prog=${0##*/}
+[ -z "$1" ] && TMPFILE=$(mktemp -q -t emacs-tmp)
 
-pager() {
-  local suffix
-  case $prog in
-    *-diff) suffix=.diff;;
-  esac
-  if [ `id -ru` != 0 -a -z "$1" ]; then
-    local MYTMP="$(mktemp -q -u emacs-tmp-XXXXX)$suffix"
-    [ -n "$MYTMP" ] && touch "$MYTMP" 2>/dev/null
-    if [ ! -f "$MYTMP" ]; then
-      # can't create in local directory, try tmp
-      MYTMP="$(mktemp -q -u -t emacs-tmp-XXXXX)$suffix"
-      [ -n "$MYTMP" ] && touch "$MYTMP" 2>/dev/null
-    fi
-    if [ -f "$MYTMP" ]; then
-      /bin/cat - > "$MYTMP"
-      [ -s "$MYTMP" ] && $EDITOR -n "$MYTMP"
-      rm "$MYTMP"
-    else
-      # no tmp file, use less
-      less "$@"
-    fi
+if [ -n "$TMPFILE" -a -w "$TMPFILE" ]; then
+
+  # remove any color codes, [char]^H sequences...
+  if [ -n "$(command -v perl)" ]; then
+    perl -pe 's/\x1b\[[0-9;]*m//g;s/\x1b]4[^\\]*\\//g;s/.\x8//g' > "$TMPFILE"
   else
-    # fallback to less
-    less "$@"
+    # doesn't work if sed doesn't support "enhanced" basic expressions
+    sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b]4[^\\]*\\//g' -e 's/.\x08//g' > "$TMPFILE"
   fi
-}
-pager "$@"
-unset -f pager
-unset prog
+
+  LINES=$(head -50 "$TMPFILE" | wc -l)
+  if (( LINES < 40 )); then
+    cat "$TMPFILE"
+  else
+    $EDITOR -n "$TMPFILE"
+  fi
+
+else
+  # fallback to less
+  less "$@"
+fi
