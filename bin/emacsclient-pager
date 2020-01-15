@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# check how we were called
+prog=${0##*/}
+
+pager() {
+  local suffix
+  case $prog in
+    *-diff) suffix=.diff;;
+  esac
+  if [ `id -ru` != 0 -a -z "$1" ]; then
+    local MYTMP="$(mktemp -q -u emacs-tmp-XXXXX)$suffix"
+    [ -n "$MYTMP" ] && touch "$MYTMP" 2>/dev/null
+    if [ ! -f "$MYTMP" ]; then
+      # can't create in local directory, try tmp
+      MYTMP="$(mktemp -q -u -t emacs-tmp-XXXXX)$suffix"
+      [ -n "$MYTMP" ] && touch "$MYTMP" 2>/dev/null
+    fi
+    if [ -f "$MYTMP" ]; then
+      /bin/cat - > "$MYTMP"
+      [ -s "$MYTMP" ] && $EDITOR -n "$MYTMP"
+      rm "$MYTMP"
+    else
+      # no tmp file, use less
+      less "$@"
+    fi
+  else
+    # fallback to less
+    less "$@"
+  fi
+}
+pager "$@"
+unset -f pager
+unset prog
