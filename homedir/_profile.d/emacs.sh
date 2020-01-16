@@ -69,6 +69,8 @@ setup_emacs() {
         PAGER="emacsclient-pager"
         if [ -n "$(command -v emacsclient-diff)" ]; then
           export DIFF_PAGER="emacsclient-diff"
+        else
+          export DIFF_PAGER=$PAGER
         fi
       fi
     fi

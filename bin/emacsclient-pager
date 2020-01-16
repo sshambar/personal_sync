@@ -6,11 +6,21 @@ cleanup() {
 }
 trap cleanup 0
 
+# create symlinks to this file with alt names to flag files of particular type
+case $0 in
+  *-diff) SUFFIX=.diff;;
+  *) SUFFIX=;;
+esac
+
 # check how we were called
 [ -z "$1" ] && TMPFILE=$(mktemp -q -t emacs-tmp)
 
 if [ -n "$TMPFILE" -a -w "$TMPFILE" ]; then
-
+  if [[ $SUFFIX ]]; then
+    # need .diff suffix so emacs will treat file as diff
+    mv "$TMPFILE" "${TMPFILE}${SUFFIX}"
+    [ $? -eq 0 ] && TMPFILE=${TMPFILE}${SUFFIX}
+  fi
   # remove any color codes, [char]^H sequences...
   if [ -n "$(command -v perl)" ]; then
     perl -pe 's/\x1b\[[0-9;]*m//g;s/\x1b]4[^\\]*\\//g;s/.\x8//g' > "$TMPFILE"
