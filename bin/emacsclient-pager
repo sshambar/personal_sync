@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# $PAGER and $DIFF_PAGER for use in emacs shell environment
+#
+# requires emacs server (see .profile.d/emacs.sh for required environment)
+#
+# handles files on stdin, or multiple files args...
+
+TMPDIR=${TMPDIR%/}
+TMPDIR=${TMPDIR:-/tmp}
+
 TMPFILE=
 cleanup() {
   [ -n "$TMPFILE" ] && rm -f "$TMPFILE"
@@ -13,7 +22,7 @@ case $0 in
 esac
 
 # check how we were called
-[ -z "$1" ] && TMPFILE=$(mktemp -q -t emacs-tmp)
+[ -z "$1" ] && TMPFILE=$(mktemp -q $TMPDIR/emacs-tmp-XXXXXX)
 
 if [ -n "$TMPFILE" -a -w "$TMPFILE" ]; then
   if [[ $SUFFIX ]]; then
@@ -29,14 +38,22 @@ if [ -n "$TMPFILE" -a -w "$TMPFILE" ]; then
     sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b]4[^\\]*\\//g' -e 's/.\x08//g' > "$TMPFILE"
   fi
 
-  LINES=$(head -50 "$TMPFILE" | wc -l)
-  if (( LINES < 40 )); then
+  if [ -n "$MYEC_TTY" -a -z "$ROWS" ]; then
+    stty --version &>/dev/null && FLAG=F || FLAG=f
+    ROWS=$(stty -a -$FLAG "$MYEC_TTY" 2>/dev/null | sed -E -e '/rows/!d' -e 's/^.*rows ([0-9]{1,});.*$/\1/' -e 's/^.* ([0-9]{1,}) rows.*$/\1/')
+  fi
+  [ -z "$ROWS" ] && ROWS=40
+  LINES=$(head -$((ROWS + 10)) "$TMPFILE" | wc -l)
+
+  if (( LINES < ROWS )); then
     cat "$TMPFILE"
   else
     $EDITOR -n "$TMPFILE"
   fi
-
 else
-  # fallback to less
-  less "$@"
+  # fallback to individual file handling...
+  while [[ $1 ]]; do
+    $EDITOR -n "$1"
+    shift
+  done
 fi

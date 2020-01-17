@@ -66,6 +66,8 @@ setup_emacs() {
 
       # use emacsclient-pager if available (handles stdin)
       if [ -n "$(command -v emacsclient-pager)" ]; then
+        # MYEC_TTY is used to get current rows
+        export MYEC_TTY=$(tty)
         PAGER="emacsclient-pager"
         if [ -n "$(command -v emacsclient-diff)" ]; then
           export DIFF_PAGER="emacsclient-diff"
