@@ -1,0 +1,397 @@
+#!/usr/bin/env bash
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
+#
+# find-diffs v1.1.0 - Finds candidates for adding to /etc/sysupgrade.conf
+# Author: Scott Shambarger <devel@shambarger.net>
+#
+# Copyright (C) 2018-2020 Scott Shambarger
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Finds all changed files in /overlay/upper compared to /rom
+# Excludes anything in /lib/upgrade/keep.d or /etc/sysupgrade.conf
+#   and any files in upgraded packages.
+# Also excludes /usr/lib/opkg...
+#
+
+ROM=/rom
+
+# Hint, here's how to mount overlay root
+#  (use as -m /mnt/orig_root -o /mnt/orig_overlay)
+# mount -t overlay overlay -o rw,noatime,lowerdir=/rom,upperdir=/mnt/orig_overlay/upper,workdir=/mnt/orig_overlay/work /mnt/orig_root
+
+usage() {
+  echo "Find candidates for /etc/sysupgrade.conf"
+  echo "Usage: [ -d ] [ -n ] [ -r <dir> ] [ -o <dir> ] [ -m <dir> ]"
+  echo "Usage: [ -d ] -a | -c [ -r <dir> ] [ -o <dir> ] [ -m <dir> ]"
+  echo "Usage: [ -d ] -s -o <dir>"
+  echo " -d - enable debug output (repeat for more)"
+  echo " -n - only include files in '$ROM' (no new files)"
+  echo " -c - show opkg new installs/upgrades"
+  echo " -a - show opkg new installs"
+  echo " -r <dir> - use <dir> in place of $ROM"
+  echo " -o <dir> - use <dir> in place of /overlay or for sync"
+  echo " -m <dir> - use <dir> as root for opkg"
+  echo " -s - check for config sync between / and -m <dir>"
+  exit 0
+}
+
+debug=0
+show_new=1
+show_upgrades=1
+mode=files
+
+OVERLAY=
+OPKG_ROOT=
+TMPMNT=
+
+help() {
+  echo >&2 "$1 (-h for help)"
+  exit 1
+}
+
+while [[ $1 ]]; do
+  case "$1" in
+    -d) ((debug++));;
+    -c) mode=opkg;;
+    -a) mode=opkg; show_upgrades=;;
+    -n) show_new=;;
+    -s) mode=sync;;
+    -o)
+      shift; [ -d "$1" ] || help "-o requires <dir>"
+      OVERLAY=$1
+      ;;
+    -r)
+      shift; [ -d "$1" ] || help "-r requires <dir>"
+      ROM=$1
+      ;;
+    -m)
+      shift; [ -d "$1" ] || help "-m requires <dir>"
+      OPKG_ROOT="-o $1"
+      ;;
+    -h) usage;;
+    *) help "Unknown option '$1'";;
+  esac
+  shift
+done
+
+#
+# LOGGING FUNCTIONS
+#
+
+# backtrace to stderr, skipping <level> callers
+backtrace() { # <level>
+  local -i x=$1; echo >&2 "Backtrace: <line#> <func> <file>"
+  while :; do ((x++)); caller >&2 $x || return 0; done
+}
+
+# print <msg> to stderr, and dump backtrace of callers
+fatal() { # <msg>
+  local IFS=' '; echo >&2 "FATAL: $*"
+  [ $debug -gt 0 ] && backtrace 0
+  exit 1
+}
+
+# fd for debug/verbose output
+exec 3>&1
+
+xdebug() { # <msg>
+  local IFS=' '; printf >&3 "%16s: %s\\n" "${FUNCNAME[2]}" "${*//$'\a'/\\}"
+  return 0
+}
+
+if [ $debug -gt 0 ]; then debug() { xdebug "$@"; }; else debug() { :; }; fi
+if [ $debug -gt 1 ]; then debug2() { xdebug "$@"; }; else debug2() { :; }; fi
+if [ $debug -gt 2 ]; then debug3() { xdebug "$@"; }; else debug3() { :; }; fi
+
+verbose() { # <msg>
+  [[ $verbose ]] || return 0
+  local IFS=' '; echo >&3 "$*"; return 0
+}
+
+#
+# DATASTORE INTERNAL FUNCTIONS
+#
+
+# INTERNAL: declare global DS if it's not an assoc array in scope
+_ds_init() {
+  [ "${BASH_VERSINFO[0]}" -ge 4 ] || fatal "Bash v4+ required"
+  local v; v=$(declare 2>/dev/null -p -A DS)
+  if [ -z "$v" ] || [ "${v#declare -A DS}" = "$v" ]; then
+    # we can declare global DS in bash 4.2+"
+    [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 2 ] && \
+      fatal "'declare -A DS' must be declared before using datastore!"
+    debug3 "Initializing DS"
+    unset -v DS 2>/dev/null; declare -gA DS
+  fi
+  unset -f _ds_init
+  _ds_init() { :; }
+}
+
+# INTERNAL: sets _n=\a<i>\a<i2>...\a<in>
+_ds_name() { # <n> <i1>...<in> ...(ignored)...
+  local IFS=$'\a'; local -i n=$1; _n=$'\a'${*:2:$n}
+}
+
+# INTERNAL: safely assign <var>=<value>
+_ds_ret() { # <var> <value>
+  [[ $1 ]] && printf 2>/dev/null -v "$1" %s "$2"
+  [[ $2 ]]
+}
+
+#
+# DS USER FUNCTIONS
+#
+# optionally "local -A DS" before using...
+#
+
+# dump contents of DS to debug
+ds_dump() {
+  declare -p DS | \
+    sed -e 's/[[]\$'\''/\n  [/g' -e 's/'\''[]]/]/g' -e 's/\\a/\\/g' | \
+    grep '[[]' | sort >&3 -b -t \\ -k 2 -k 1
+}
+
+# DS[_ds_name($@)]=<value>...
+ds_nset() { # <n> [ <key1>...<keyn> ] [ <value>... ]
+  _ds_init
+  local _n iname value IFS=' '
+  _ds_name "$@"; shift "$1"; value=${*:2}
+  debug3 "$_n=$value"
+  [[ $value ]] || return
+  [[ ${DS[_$_n]} ]] && DS[_$_n]=$value && return
+  iname=${_n%$'\a'*}
+  local -i i=${DS[i$iname]}
+  DS[k$iname$'\a'$i]=${_n##*$'\a'}; ((i++))
+  DS[i$iname]=$i
+  DS[_$_n]=$value
+}
+
+# short for ds_nset(1 <key> <value>...)
+ds_set() { # <key> <value>...
+  if [[ $1 ]]; then ds_nset 1 "$@"; else ds_nset 0 "${@:2}"; fi
+}
+
+# <ret>=value identified by <key1>...<keyn> (true if value)
+ds_nget() { # <ret> <n> <key1>...<keyn>
+  local _n
+  _ds_name "${@:2}"
+  debug3 "$_n => ${DS[_$_n]}"
+  _ds_ret "$1" "${DS[_$_n]}"
+}
+
+# short for ds_nget(<ret> 1 <key>) (true if value)
+ds_get() { # <ret> <key>
+  if [[ $2 ]]; then ds_nget "$1" 1 "$2"; else ds_nget "$1"; fi
+}
+
+# <ret>=<i>th key below <key1>...<keyn> (true if value)
+ds_ngeti() { # <ret> <n> <key1>...<keyn> <i>
+  local _n _key
+  local -i _i=$2
+  ((_i+=3)); _i=${*:$_i:1}
+  [ "$_i" -lt 0 ] && { _ds_ret "$1"; return; }
+  _ds_name "${@:2}"
+  _key=${DS[k$_n$'\a'$_i]}
+  debug3 "$_n#$_i => $_key"
+  _ds_ret "$1" "$_key"
+}
+
+#
+# A FEW UTITLITY FUNCTIONS
+#
+
+shopt -s extglob
+strip() { # <var> <text>
+  debug3 "$@"
+  local _s=$2
+  _s=${_s##+([[:space:]])}; _s=${_s%%+([[:space:]])}
+  printf -v "$1" %s "$_s"
+}
+
+add_ignore() { # <file>
+  debug2 "ignoring $1"
+  ds_nset 2 ifile "$1" 1
+}
+
+add_ignore_pat() { # <file> containing patterns
+  local line IFS=' '
+  debug "reading ignore file $1"
+  while read -r line; do
+    strip line "$line"
+    [ -z "$line" ] && continue
+    [[ "$line" =~ ^# ]] && continue
+    debug2 "ignoring ${line}"
+    ds_nset 2 ipat "${line}" 1
+  done < "$1"
+}
+
+find_ignore() {
+  local file line
+  if [ -d "/lib/upgrade/keep.d" ]; then
+    while read -r file; do
+      add_ignore_pat "$file"
+    done <<< "$(find /lib/upgrade/keep.d -type f -o -type l)"
+  fi
+  [ -f "/etc/sysupgrade.conf" ] && add_ignore_pat "/etc/sysupgrade.conf"
+}
+
+is_ignored() { # <file>
+  local -i i=0
+  local if tf=$1
+  ds_nget "" 2 ifile "$tf" && debug2 "ignored by $tf" && return
+  while :; do
+    ds_ngeti if 1 ipat $i || break
+    ((i++))
+    [[ "$tf" = ${if}* ]] && debug2 "ignored by $if*" && return
+  done
+  return 1
+}
+
+find_diffs() {
+  command -v diff >/dev/null || fatal "Where is diff?"
+  local file f lf romf IFS=' '
+
+  find "$OVERLAY/upper" -path "$OVERLAY/upper/usr/lib/opkg" -prune \
+       -o \( -type f -o -type l \) -print0 | while read -r -d '' file; do
+    f=${file#$OVERLAY/upper}
+    # ignore opkg datafiles
+    [ "$f" = /usr/lib/opkg ] && continue
+    # ignore startup files
+    [[ "$f" =~ /etc/rc.d/.* ]] && continue
+    # ignore generated files
+    [ "$f" = /etc/board.json ] || [ "$f" = /etc/urandom.seed ] && continue
+    romf=$ROM$f
+    debug2 "checking $f"
+    if [ -f "$romf" ]; then
+      diff -w -q "$file" "$romf" >/dev/null && continue
+      is_ignored "$f" && continue
+      debug2 "file $f changed"
+    else
+      [[ $show_new ]] || continue
+      is_ignored "$f" && continue
+      debug2 "file $f is new"
+    fi
+    # if symlink to ignored file, skip...
+    if [ -h "$f" ]; then
+      lf=$(readlink "$f")
+      debug2 "file $f is symlink to $lf"
+      is_ignored "$lf" && continue
+    fi
+    echo "$f"
+  done
+}
+
+find_opkg() {
+  command -v opkg >/dev/null || fatal "Where is opkg?"
+  opkg >/dev/null $OPKG_ROOT list-installed || fatal "opkg $OPKG_ROOT failed"
+  if ! opkg &>/dev/null -o "$ROM" list-installed; then
+    [ -w "$ROM/var/lock" ] && fatal "opkg on '$ROM' failed"
+    # probably opkg cant get lockfile, create $ROM/var/lock
+    debug "mounting tmpfs on $ROM/var"
+    mount -t tmpfs tmpfs "$ROM/var" || fatal "opkg rom lock: unable to mount tmpfs on $ROM/var"
+    TMPMNT=1
+    mkdir "$ROM/var/lock" || fatal "opkg rom lock: Unable to mkdir $ROM/var/lock"
+  fi
+  opkg >/dev/null -o "$ROM" list-installed || fatal "opkg on '$ROM' failed"
+  local line pkg IFS=' '
+
+  # rom packages
+  while read -r line; do
+    [[ $show_upgrades ]] || line=${line%% - *}
+    debug2 "rom pkg: $line"
+    ds_nset 2 pkg "$line" 1
+  done <<< "$(opkg -o "$ROM" list-installed)"
+
+  # now find only added/upgraded packages
+  while read -r line; do
+    [[ $show_upgrades ]] || line=${line%% - *}
+    debug2 "inst: $line"
+    ds_nget "" 2 pkg "$line" && continue
+    verbose "$line"
+    [ "$mode" = opkg ] && continue
+    pkg=${line%% *}
+    debug "ignoring files in package $pkg"
+    while read -r line; do
+      [[ "$line" =~ Package.* ]] && continue
+      add_ignore "$line"
+    done <<< "$(opkg files "$pkg")"
+  done <<< "$(opkg $OPKG_ROOT list-installed)"
+
+  [ "$mode" = opkg ] && return
+
+  # ignore package config (saved by default)
+  debug "ignoring changed package config files"
+  while read -r line; do
+    add_ignore "$line"
+  done <<< "$(opkg $OPKG_ROOT list-changed-conffiles)"
+}
+
+check_sync() {
+  # ignore package config (saved by default)
+  debug "checking sync of config files"
+  local f file
+  while read -r file; do
+    debug2 "checking $file"
+    f=$OVERLAY/upper$file
+    if [ -f "$f" ]; then
+      diff -w -q "$file" "$f" >/dev/null && continue
+      echo "$file differs"
+    else
+      echo "$file missing"
+    fi
+  done <<< "$(opkg list-changed-conffiles)"
+}
+
+cleanup() {
+  [ -n "$TMPMNT" ] || return
+  debug "unmounting $ROM/var"
+  umount 2>/dev/null "$ROM/var"
+}
+
+trap cleanup EXIT
+
+# option sanity check
+if [ "$mode" = "sync" ]; then
+  [[ $OVERLAY ]] || fatal "-s option requires -o <dir>"
+elif [[ $OPKG_ROOT ]]; then
+  [[ $OVERLAY ]] || fatal "-m option also requires -o <dir> for overlay"
+fi
+
+[[ $OVERLAY ]] || OVERLAY=/overlay
+
+[ -d "$ROM/etc" ] || fatal "No '$ROM' mount?"
+[ -d "$OVERLAY/upper" ] || fatal "'$OVERLAY' not an overlay mount?"
+
+case "$mode" in
+  files)
+    find_ignore
+    find_opkg
+    find_diffs
+    ;;
+  opkg)
+    verbose=1
+    find_opkg
+    ;;
+  sync)
+    check_sync
+    ;;
+esac
+
+[ $debug -gt 2 ] && ds_dump
+
+# Local Variables:
+# sh-basic-offset: 2
+# indent-tabs-mode: nil
+# End:
