@@ -2,7 +2,7 @@
 # -*- mode: shell-script; fill-column: 78 -*-
 # ex: filetype=sh
 #
-# dhcpd-watch v0.5 Spawn dhcpd on VirtualBox network (on MacOS)
+# dhcpd-watch v0.6 Spawn dhcpd on VirtualBox network (on MacOS)
 # Author: Scott Shambarger <devel@shambarger.net>
 #
 # Script to load VBox drivers, configure network interface, and spawn dhcpd
@@ -10,7 +10,7 @@
 #
 # Can be running directly, or spawned at startup by launchd
 
-# Copyright 2019 Scott Shambarger.  All rights reserved.
+# Copyright 2020 Scott Shambarger.  All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@ VBOXCFG="/Users/scott/Library/VirtualBox/VirtualBox.xml"
 # VBoxManage app
 VBOXM="/Applications/VirtualBox.app/Contents/MacOS/VBoxManage"
 
-msg() {
+msg() { # <msg>
   echo >&2 "$*"
 }
 
@@ -67,20 +67,26 @@ kill_proc() { # <cmd-to-kill>
 }
 
 kill_jobs() {
-  while true; do
-    set -- $(jobs -rl | head -1)
-    [ -n "$2" ] || break
-    [ -n "$4" ] && msg "Killing $(eval echo "$4 $5")..."
-    kill 2>/dev/null $2
-    # let bash update jobs
-    sleep 0.05
+  local pid
+  # list our jobs that are still around...
+  for pid in $(jobs -rp); do
+    set -- $(ps -p $pid -o command=cmd | tail -1)
+    [ "$1" = cmd ] && continue
+    msg "Killing $1 $2..."
   done
+  pkill -P $$
+}
+
+check_bg() { # <name>
+  # 0.2 sec should be enough for the command to fail
+  sleep 0.2
+  kill -0 $! || err "Failed to spawn $*"
 }
 
 add_ip6_routes() {
   [ -n "$IP6_ROUTES" ] && {
     # route is <subnet>/<prefix> <gateway>
-    set $IP6_ROUTES
+    set -- $IP6_ROUTES
     while [ -n "$1" -a -n "$2" ]; do
       SUBNET=$1 GW=$2
       shift 2
@@ -94,7 +100,7 @@ add_ip6_routes() {
 remove_ip6_routes() {
   [ -n "$IP6_ROUTES" ] && {
     # route is <subnet>/<prefix> <gateway>
-    set $IP6_ROUTES
+    set -- $IP6_ROUTES
     while [ -n "$1" -a -n "$2" ]; do
       SUBNET=$1 GW=$2
       shift 2
@@ -232,30 +238,32 @@ kill_proc "$DHCPD -4 -d $NET"
 # start daemon with fresh logfile, kill parent if quits
 msg "Spawning dhcpd v4"
 "$DHCPD" -4 -d $NET 2>"$LOGFILE" &
+check_bg "$DHCPD -4"
 
 [ -n "$IP6" -a -n "$IP6MASK" ] && {
 
   # ipv6 config
+  enable_ip6_forwarding
+
+  add_ip6_routes
+
+  # kill duplicate rtadvd
+  kill_proc "$RTADVD -f $NET"
+
+  msg "Spawning v6 Route Advertisement daemon..."
+  "$RTADVD" -f $NET &
+  check_bg "$RTADVD"
 
   [ -f "$DHCP6CFG" ] && {
 
     [ -n "$LOGFILE6" ] || err "dhcpd v6 logfile not set"
-
-    enable_ip6_forwarding
-
-    add_ip6_routes
-
-    # kill duplicate rtadvd
-    kill_proc "$RTADVD -f $NET"
-
-    msg "Spawning v6 Route Advertisement daemon..."
-    "$RTADVD" -f $NET &
 
     # kill conflicting dhcpd
     kill_proc "$DHCPD -6 -d -cf $DHCP6CFG $NET"
 
     msg "Spawning dhcpd v6"
     "$DHCPD" -6 -d -cf "$DHCP6CFG" $NET 2>"$LOGFILE6" &
+    check_bg "$DHCPD -6"
   }
 }
 
