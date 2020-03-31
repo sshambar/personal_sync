@@ -1,0 +1,20 @@
+#!/bin/bash
+
+[ "$1" = kill ] && { adb kill-server; exit; }
+
+adb start-server || exit 1
+
+adb devices | grep -q "device$"
+[ $? -ne 0 ] && echo "No device attached to USB" && exit 1
+
+if ! adb forward --list | grep -q "tcp:8022 tcp:8022"; then
+  echo "Setting up port 8022 forwarding...(for ssh)"
+  adb forward tcp:8022 tcp:8022 || exit 1
+fi
+
+[ "$1" = check ] && exit 0
+
+echo
+echo "Now make sure sshd is running in Termux!"
+
+exit 0

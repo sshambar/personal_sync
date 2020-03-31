@@ -1,16 +1,15 @@
 #!/bin/bash
 # -*- mode: shell-script; fill-column: 78 -*-
-# ex: filetype=sh
 #
-# dhcpd-watch v0.7 Spawn dhcpd on VirtualBox network (on MacOS)
+# dhcpd-watch v0.7 Spawn dhcpd on VirtualBox network (MacOS host)
+#
 # Author: Scott Shambarger <devel@shambarger.net>
+# Copyright (C) 2020 Scott Shambarger
 #
 # Script to load VBox drivers, configure network interface, and spawn dhcpd
 # Watches dhcpd for looping errors and kills it (if interface is removed!)
 #
 # Can be running directly, or spawned at startup by launchd
-
-# Copyright 2020 Scott Shambarger.  All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

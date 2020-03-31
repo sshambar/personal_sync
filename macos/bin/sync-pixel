@@ -1,0 +1,16 @@
+#!/bin/bash
+
+ARGS=
+while [ -n "$1" ]; do
+ case "$1" in
+ test) ARGS="-n $ARGS";;
+ delete) ARGS="--delete $ARGS";;
+ *)  echo "Usage: sync-pixel [ test ] [ delete ]" && exit 0;;
+ esac
+ shift
+done
+
+setup-pixel check || exit 1
+
+rsync -avFF $ARGS pixel:storage/pictures/ ~/Pictures/Pixel/
+

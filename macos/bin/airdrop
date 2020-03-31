@@ -1,0 +1,24 @@
+#!/bin/bash
+
+DISABLE=
+case "$1" in
+  enable)
+    DISABLE=NO
+    ;;
+  disable)
+    DISABLE=YES
+    ;;
+  status)
+    DISABLE=$(defaults read com.apple.NetworkBrowser DisableAirDrop)
+    [ "$DISABLE" -eq 1 ] && STATE=disabled || STATE=enabled
+    echo "Airdrop is currently $STATE"
+    exit 0
+    ;;
+  *)
+    echo "Usage: $0 status | enable | disable";
+    exit 1
+    ;;
+esac
+
+defaults write com.apple.NetworkBrowser DisableAirDrop -bool $DISABLE
+echo "Now logout to $1 Airdrop..."

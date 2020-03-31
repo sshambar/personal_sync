@@ -1,0 +1,85 @@
+#!/bin/bash
+
+SRC="/Volumes/removable_SDCARD"
+ALTSRC="/Volumes/FLASHCARD"
+DST="/Users/scott"
+
+usage() {
+  echo "Usage: ${0##*/} [test] [fast]"
+  echo "  test - no changes"
+  echo "  fast - just sync camera pics/videos (skip albums)"
+  exit 1
+}
+
+ARGS="-rltuO --size-only --delete-during --exclude=*.db* --exclude=*.log* --no-p"
+CAM_ONLY=
+
+while [ -n "$1" ]; do
+  case "$1" in
+    "test") ARGS="$ARGS -n";;
+    "fast") CAM_ONLY=1;;
+    *) usage;;
+  esac
+  shift
+done
+
+[ -d "$ALTSRC" ] && SRC="$ALTSRC"
+
+PIC_SRC="$SRC/photos/"
+PIC_DEST="$DST/Pictures/Blackberry/"
+
+CAM_SRC="$SRC/camera/"
+CAM_DEST="$DST/Pictures/Blackberry-camera/"
+
+VID_SRC="$SRC/videos/"
+VID_DEST="$DST/Movies/Blackberry/"
+
+[ ! -d "$SRC" ] && echo "Blackberry sdcard not mounted, start BlackBerry Link!" && exit 1
+
+[ ! -d "$PIC_SRC" ] && echo "Unable to find pic source: $PIC_SRC" && exit 1
+
+[ ! -d "$PIC_DEST" ] && echo "Unable to find pic destination: $PIC_DEST" && exit 1
+
+[ ! -d "$CAM_SRC" ] && echo "Unable to find camera source: $CAM_SRC" && exit 1
+
+[ ! -d "$CAM_DEST" ] && echo "Unable to find camera destination: $CAM_DEST" && exit 1
+
+[ ! -d "$VID_SRC" ] && echo "Unable to find video source: $VID_SRC" && exit 1
+
+[ ! -d "$VID_DEST" ] && echo "Unable to find video destination: $VID_DEST" && exit 1
+
+if [ -z "$CAM_ONLY" ]; then
+  echo
+  echo "*************************************"
+  echo "*      Syncing picture albums       *"
+  echo "*************************************"
+
+  # show progress as it's slow...
+  echo rsync $ARGS --progress "$PIC_SRC" "$PIC_DEST"
+  echo
+  rsync $ARGS --progress "$PIC_SRC" "$PIC_DEST"
+  [ $? -ne 0 ] && exit 1
+fi
+
+# itemize changes for camera
+ARGS="$ARGS -i"
+
+echo
+echo "*************************************"
+echo "*      Syncing camera pictures      *"
+echo "*************************************"
+
+echo rsync $ARGS "$CAM_SRC" "$CAM_DEST"
+echo
+rsync $ARGS "$CAM_SRC" "$CAM_DEST"
+[ $? -ne 0 ] && exit 1
+
+echo
+echo "*************************************"
+echo "*        Syncing video files        *"
+echo "*************************************"
+
+echo rsync $ARGS "$VID_SRC" "$VID_DEST"
+echo
+rsync $ARGS "$VID_SRC" "$VID_DEST"
+

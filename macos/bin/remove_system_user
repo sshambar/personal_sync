@@ -1,0 +1,36 @@
+#!/bin/sh
+# delete service user similar to Linux userdel command, but leaving the files intact
+# to view existing users and ids try:
+# dscl . -readall /Users UniqueID | sort -nk 2
+
+die () {
+    echo >&2 "$@"
+    exit 1
+}
+
+echo "Usage: sudo $0 username"
+echo "NOTES: username shouldn't start with the underscore (it will be appended"
+echo "       by the script)."
+echo ""
+
+# Check that we are superuser (i.e. $(id -u) is zero)
+[ `id -u` -eq 0 ] || die "This script needs to run as root"
+[ "$#" -eq 1 ] || die "Error: username arguments is required!"
+
+username_=$1
+
+check_urn=`dscl . -search /Users RecordName _$username_`
+
+[ ${#check_urn} = 0 ] && die "failed!\nERROR: No user _$username_ found\n"
+
+dscl . -read /Users/_$username_ RecordName PrimaryGroupID RealName
+
+echo "Really delete $username_ (y/n) ? "
+read input_
+[ "$input_" = "y" ] || die "as you wish..."
+
+dscl . -delete /Users/$username_
+dscl . -delete /Groups/$username_
+
+echo "done!"
+

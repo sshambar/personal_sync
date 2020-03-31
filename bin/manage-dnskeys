@@ -1,13 +1,12 @@
 #!/bin/bash
-# -*- mode: shell-script; fill-column: 78 -*-
-# ex: filetype=sh
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
 # manage-dnskeys v1.0 Manage bind DNSKEYs via cron
+#
 # Author: Scott Shambarger <devel@shambarger.net>
+# Copyright (C) 2019 Scott Shambarger
 #
 # Run with '-h' to get a quick summary of what this script does
-#
-# Copyright 2019 Scott Shambarger.  All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

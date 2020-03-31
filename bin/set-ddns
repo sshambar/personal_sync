@@ -1,10 +1,10 @@
 #!/bin/sh
-# -*- mode: shell-script; fill-column: 78 -*-
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
 # set-ddns v0.6 DDNS update script
-# Author: Scott Shambarger <devel@shambarger.net>
 #
-# Copyright 2019 Scott Shambarger.  All rights reserved.
+# Author: Scott Shambarger <devel@shambarger.net>
+# Copyright (C) 2019 Scott Shambarger
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

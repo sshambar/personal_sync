@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# find-diffs v1.1.1 - Finds candidates for adding to /etc/sysupgrade.conf
-# Author: Scott Shambarger <devel@shambarger.net>
+# find-diffs v1.1.2 - Finds candidates for adding to /etc/sysupgrade.conf
 #
+# Author: Scott Shambarger <devel@shambarger.net>
 # Copyright (C) 2018-2020 Scott Shambarger
+#
+# Finds all changed files in /overlay/upper compared to /rom
+# Excludes anything in /lib/upgrade/keep.d or /etc/sysupgrade.conf
+#   and any files in upgraded packages.
+# Also excludes /usr/lib/opkg...
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,11 +23,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-# Finds all changed files in /overlay/upper compared to /rom
-# Excludes anything in /lib/upgrade/keep.d or /etc/sysupgrade.conf
-#   and any files in upgraded packages.
-# Also excludes /usr/lib/opkg...
 #
 
 ROM=/rom

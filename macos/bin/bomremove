@@ -1,0 +1,219 @@
+#!/bin/bash
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
+#
+# bomremove v0.1 - MacOS application removal based on Bill-Of-Materials
+#
+# Author: Scott Shambarger <devel@shambarger.net>
+# Copyright (C) 2012 Scott Shambarger
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+sudo=
+[ `id -u` -eq 0 ] || sudo="sudo"
+
+rm="$sudo rm"
+rmdir="$sudo rmdir"
+
+prog="${0##*/}"
+
+function parse_pkg() {
+
+  pkg="${pkg##*/}"; pkg="${pkg%/}"; pkg="${pkg%.}"
+  pkg="${pkg%.bom}"; pkg="${pkg%.plist}"
+
+  [ -n "$inter" ] && echo "Looking for \"$pkg\""
+
+  top=
+  pkgdir="/Library/Receipts/$pkg"
+
+  if [ -d "$pkgdir" ]; then
+    bom="$pkgdir/Contents/Archive.bom"
+    plist="$pkgdir/Contents/Info.plist"
+    [ -f "$plist" ] && top=`defaults read "$plist" IFPkgFlagDefaultLocation`
+  else
+    pkgdir=
+    bom="/var/db/receipts/$pkg.bom"
+    if [ ! -f "$bom" ]; then
+      echo "Receipt not found, check pkg name!"
+      echo "Installed packages can be found in \"/var/db/receipts\" or \"/Library/Receipts\""
+      exit 1
+    fi
+    plist="/var/db/receipts/$pkg.plist"
+    [ -f "$plist" ] && top=`defaults read "$plist" InstallPrefixPath`
+  fi
+
+  top="/${top#/}"; top="${top%/}"
+
+  if [ -n "$inter" ]; then
+    echo "Found receipt: \"$bom\""
+    echo "Install path is: \"$top\""
+  fi
+}
+
+function remove() {
+  d="$1"
+  if [ -f "$d" -o -h "$d" ]; then
+    echo "rm \"$d\""
+    if [ -n "$rm" ]; then
+      $rm "$d"
+      [ $? -ne 0 ] && echo "rm failed, stopping" && exit 1
+    fi
+  else
+    echo "skipping \"$d\" -- not a file/symlink"
+  fi
+}
+
+function remove_dir() {
+  d="$1"
+  [ -n "$inter" ] && echo "cleanup: \"$d\""
+  while [ -n "$d" -a "$d" != "." ]; do
+    if [ -n "$rmdir" ]; then
+      $rmdir 2>/dev/null "$d"
+      [ $? -ne 0 ] && return
+    fi
+    echo "rmdir \"$d\""
+    d="${d%/*}"
+  done
+}
+
+function do_action() {
+  [ -n "$inter" ] && echo "==========\"$pkg\"==========="
+  missing=0
+  count=0
+  nifs=$'\n'; oifs=$IFS; IFS=$nifs
+  for f in `lsbom -fls "$bom"`; do
+    f="${f#.}"; f="${f#/}"; f="$top/$f"
+    if [ -e "$f" ]; then
+      [ -n "$do_ls" ] && echo "$f"
+      ((count += 1))
+    else
+      [ -n "$do_miss" ] && echo "MISSING: \"$f\""
+      ((missing += 1))
+    fi
+    if [ -n "$do_rm" ]; then
+      IFS=$oifs; remove "$f"; IFS=$nifs
+    fi
+  done
+  if [ -n "$do_rm" ]; then
+    for f in `lsbom -fls "$bom" | sed 's|/[^/]*$||' | sort -ur`; do
+      f="${f#.}"; f="${f#/}"; f="$top/$f"
+      IFS=$oifs; remove_dir "$f"; IFS=$nifs
+    done
+  fi
+  IFS=$oifs
+  if [ -n "$inter" ]; then
+    [ -n "$do_ls" ] && echo "Found $count file(s)"
+    [ -n "$do_miss" -a "$missing" -ne 0 ] && echo "WARNING: $missing file(s) missing!"
+  fi
+  if [ -n "$do_rm" ]; then
+    if [ -n "$pkgdir" ]; then
+      echo "rm -r \"$pkgdir\""
+      if [ -n "$rm" ]; then
+	$rm -r "$pkgdir"
+	[ $? -ne 0 ] && echo "rm failed, stopping" && exit 1
+      fi
+    else
+      [ -f "$plist" ] && remove "$plist"
+      remove "$bom"
+    fi
+    [ -n "$inter" ] && echo -e "\nDone!\n"
+  fi
+}
+
+function show_help() {
+  local d=$1
+  if [ -n "$d" ]; then
+    echo "Usage: $prog [<action>] <pkg-name> ..."
+    echo -e "\n\texample: $prog org.wireshark.ChmodBPF.pkg"
+  fi
+  echo -e "\nActions:"
+  echo -e "\t${d}p - list files present"
+  echo -e "\t${d}l - list files"
+  echo -e "\t${d}m - list missing files"
+  echo -e "\t${d}d - delete all files"
+  echo -e "\t${d}q - quit"
+  if [ -n "$d" ]; then
+    echo -e "Options:"
+    echo -e "\t${d}n - dry-run, don't actually delete files, just show what would be deleted"
+  fi
+}
+
+act=
+while [ -n "$1" ]; do
+  case "$1" in
+    -h) show_help "-"; exit 0 ;;
+    -p) act=p ;;
+    -l) act=l ;;
+    -m) act=m ;;
+    -d) act=d ;;
+    -n) rm=; rmdir= ;;
+    -*) echo "Unknown action: \"$1\"" ;;
+    *) break ;;
+  esac
+  shift
+done
+
+# valid package args
+pcnt=0
+for pkg in $*; do
+  parse_pkg
+  ((pcnt += 1))
+done
+
+[ $pcnt -eq 0 ] && show_help "-" && exit 1
+
+inter=
+while true; do
+
+  if [ -z "$act" ]; then
+    show_help ""
+    read -p "Choice: " act
+    echo
+    inter=1
+  fi
+
+  do_ls=
+  do_rm=
+  do_miss=
+  case $act in
+    q|'') echo -e "Quitting\n"; exit 0 ;;
+    p) do_ls=1 ;;
+    l) do_ls=1; do_miss=1 ;;
+    m) do_miss=1 ;;
+    d) do_rm=1 ;;
+    *) echo "Unknown action \"$act\"" ; continue ;;
+  esac
+
+  fcnt=0
+  mcnt=0
+  for pkg in $*; do
+    parse_pkg
+    do_action
+    ((fcnt += $count))
+    ((mcnt += $missing))
+  done
+
+  if [ $pcnt -gt 1 -a -n "$inter" ]; then
+    echo -e "\nTotals:\n\t$pcnt packages"
+    [ -n "$do_ls" ] && echo -e "\t$fcnt files"
+    [ -n "$do_miss" -a $mcnt -ne 0 ] && echo -e "\t$mcnt missing files"
+  fi
+
+  [ "$act" == "d" ] && exit 0
+
+  act=
+  [ -z "$inter" ] && break
+done
+

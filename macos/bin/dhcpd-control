@@ -1,0 +1,96 @@
+#!/bin/bash
+
+# dhcpd-config - Start/stop dhcpd-watch daemon
+
+usage() {
+  echo "Usage: $0 start | stop | restart | status"
+}
+
+LABEL=dhcpd-watch
+
+DEBUG=
+ROOT=
+args="$@"
+
+as_root() {
+  # turn off dup msg suppression
+  ROOT=
+  [ $EUID = 0 ] && return
+  echo "root privileges required, re-starting with sudo..."
+  exec sudo "$0" $args root
+}
+
+OK=1
+FAIL=1
+
+msg() {
+  # no output if duplicate msg
+  [ -z "$ROOT" ] && echo "$@"
+}
+
+ok() {
+  [ -n "$OK" ] && msg "$@"
+  return 0
+}
+
+fail() {
+  [ -n "$FAIL" ] && msg "$@"
+  return 1
+}
+
+label_running() { # <label>
+  local pid=$(launchctl print system/$1 | grep "pid =" | awk '{ print $3 }')
+  [ -n "$pid" ] && ok "$1 running, pid $pid" || fail "$1 not running"
+}
+
+start_server() {
+
+  # don't show fail msgs (expected)
+  FAIL=
+  label_running "$LABEL" && return
+
+  as_root
+  msg "Starting $LABEL..."
+  launchctl kickstart -k system/$LABEL
+}
+
+stop_server() {
+
+  OK=
+  label_running "$LABEL" || return
+
+  msg "Stopping $LABEL..."
+  as_root
+  launchctl kill SIGTERM system/$LABEL
+}
+
+server_status() {
+  label_running "$LABEL" || {
+    launchctl print system/$LABEL | grep "last exit code ="
+  }
+}
+
+MODE=
+while [ -n "$1" ]; do
+  case "$1" in
+    stop|start|restart|status) MODE=$1;;
+    root) ROOT=1;;
+    *) usage; exit 1;;
+  esac
+  shift
+done
+
+case "$MODE" in
+  stop) stop_server;;
+  start) start_server;;
+  restart)
+    stop_server;
+    # quietly wait for server to stop
+    i=0 OK= FAIL=
+    while label_running "$LABEL" && [ $((i++)) -lt 5 ]; do sleep 0.5; done
+    OK=1 FAIL=1
+    start_server
+    ;;
+  *) server_status;;
+esac
+
