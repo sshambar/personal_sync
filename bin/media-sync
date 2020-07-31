@@ -1,7 +1,7 @@
 #!/bin/bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# media-sync v0.9 Media Sync
+# media-sync v1.0 Media Sync
 #
 # Author: Scott Shambarger <devel@shambarger.net>
 # Copyright (C) 2020 Scott Shambarger
@@ -26,27 +26,31 @@
 #
 #   # media-sync help
 #
-# Optional config/overrides (/etc/media-sync.conf):
+# Environment overrides:
+#   LOCAL_USER - user to run rsync as (default: media)
+#
+# Optional config/overrides (~/.media-sync.conf, or /etc/media-sync.conf):
 #   LOCAL_USER - user to run rsync as (default: media)
 #   LOCAL_DIR - local sync location (default: /mnt/media/Video/)
 #   REMOTE - rsync remote folder (default: sync:/ - ie uses ~/.ssh/config)
 #   RECV_SPEED - rsync speed for receive in kBps (default: 250)
 #   SEND_SPEED - rsync speed for send in kBps (default: 250)
-#   LOG - sync log location (default: $HOME/media-sync.log)
+#   LOG - sync log location (default: ~/media-sync.log)
 #   ALT_REMOTE - remote to use with "alt" option (default: 127.0.0.1::Videos/)
 #   RSYNC_FILTERS - rsync filter option (default: --exclude=.*)
 #   TIMEOUT - rsync timeout in secs (default: 300)
 #
 # Required commands (config override in parens):
-#   rsync (RSYNC), pgrep (PGREP)
+#   rsync (RSYNC), pkill (PKILL)
+#
 # Required commands in run as root:
 #   su, realpath
 #
 
+LOCAL_USER=${LOCAL_USER:-media}
+
 CONFIG="/etc/media-sync.conf"
-
-LOCAL_USER=media
-
+[ -r ~/.media-sync.conf ] && CONFIG=~/.media-sync.conf
 [ -r "$CONFIG" ] && eval $(grep "^LOCAL_USER=[a-z]*$" "$CONFIG")
 
 [ -z "$LOCAL_USER" ] && echo "Invalid LOCAL_USER $LOCAL_USER" && exit 1
@@ -64,15 +68,19 @@ fi
 
 [ "$USER" != "$LOCAL_USER" ] && echo "Run as user $LOCAL_USER or root" && exit 1
 
+CONFIG="/etc/media-sync.conf"
+# (new) local user config overrides global
+[ -r ~/.media-sync.conf ] && CONFIG=~/.media-sync.conf
+
 # some reasonable defaults
-LOG="$HOME/media-sync.log"
+LOG=~/media-sync.log
 
 # local directory/user to sync
 LOCAL_DIR="/mnt/media/Video/"
 RSYNC_FILTERS="--exclude=.*"
 
 # alternate remote
-ALT_REMOTE=127.0.0.1::Videos/
+ALT_REMOTE=127.0.0.1::Video/
 
 # remote destination
 REMOTE="sync:/"
@@ -84,12 +92,8 @@ SEND_SPEED=250
 # timeout in seconds
 TIMEOUT=300
 
-PGREP="/usr/bin/pgrep"
-RSYNC="/usr/bin/rsync"
-
-# prefer local builds of executables
-[ -x "/usr/local/bin/pgrep" ] && PGREP="/usr/local/bin/pgrep"
-[ -x "/usr/local/bin/rsync" ] && RSYNC="/usr/local/bin/rsync"
+PKILL=$(command -v pkill)
+RSYNC=$(command -v rsync)
 
 # local all overrides
 [ -r "$CONFIG" ] && . "$CONFIG"
@@ -109,7 +113,9 @@ usage () {
 	echo "Receive files into local directory $LOCAL_DIR"
 	echo "  from remote location $REMOTE as local user $LOCAL_USER"
 	echo "<options> can be one or more of:"
+	echo "  status - display if sync is running"
 	echo "  test - only show what will be synced"
+	echo "  cancel - cancel any running sync"
 	echo "  delete - perform deletes (local, and if send, remote)"
 	echo "  verbose - show rsync debug info"
 	echo "  progress - show progress during transfers"
@@ -120,58 +126,76 @@ usage () {
 }
 
 rsync_args=
-send=0
+cancel=
+send=
+test=
 args="$*"
 outfmt="%t %i %n"
 
 for f in "$@"; do
   case $f in
-  test)
-	LOG=
-	rsync_args="-n $rsync_args"
-	;;
-  delete)
-	rsync_args="--delete-during $rsync_args"
-	;;
-  verbose)
-	LOG=
-	;;
-  progress)
-	LOG=
-	rsync_args="--progress --stats $rsync_args"
-	;;
-  alt)
-	REMOTE=$ALT_REMOTE
-	;;
-  fast)
-	RECV_SPEED=
-	SEND_SPEED=
-	;;
-  send)
-	send=1
-	;;
-  help)
-	usage
-	exit 0
-	;;
-  *)
-	echo "Unknown option: $f"
-	usage
-	exit 1
-	;;
+    status)
+      cancel=1
+      ;&
+    test)
+      test=1
+      LOG=
+      rsync_args="-n $rsync_args"
+      ;;
+    delete)
+      rsync_args="--delete-during $rsync_args"
+      ;;
+    verbose)
+      LOG=
+      ;;
+    progress)
+      LOG=
+      rsync_args="--progress --stats $rsync_args"
+      ;;
+    alt)
+      REMOTE=$ALT_REMOTE
+      ;;
+    fast)
+      RECV_SPEED=
+      SEND_SPEED=
+      ;;
+    send)
+      send=1
+      ;;
+    cancel)
+      cancel=1
+      ;;
+    help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $f"
+      usage
+      exit 1
+      ;;
   esac
   shift
 done
+
+[ ! -x "$PKILL" ] && log "Unable to find pkill (set PKILL config)" && exit 2
+[ ! -x "$RSYNC" ] && log "Unable to find rsync (set RSYNC config)" && exit 2
+
+if [ -n "$cancel" ]; then
+  [ -n "$test" ] && signal=0 || signal=USR1
+  "$PKILL" -$signal -u $LOCAL_USER rsync
+  rc=$?
+  [ $rc -eq 0 ] && status= || status="not "
+  [ -n "$test" ] && echo "media-sync is ${status}running" && exit $rc
+  exit 0
+fi
 
 # add common args
 rsync_args="-rltuHO $rsync_args $RSYNC_FILTERS --safe-links --chmod=Da=rwX,Fa=rw --timeout=$TIMEOUT"
 
 log "start: $args"
 
-[ ! -x "$PGREP" ] && log "Unable to find pgrep at $PGREP" && exit 2
-[ ! -x "$RSYNC" ] && log "Unable to find rsync at $RSYNC" && exit 2
-
-"$PGREP" -u $LOCAL_USER rsync >/dev/null
+"$PKILL" -0 -u $LOCAL_USER rsync
 if [ $? -eq 0 ]; then
   log "still running..."
   exit 0
@@ -182,7 +206,7 @@ if [ ! -d "$LOCAL_DIR" ]; then
   exit 2
 fi
 
-if [ $send -eq 1 ]; then
+if [ -n "$send" ]; then
 
   [ -n "$SEND_SPEED" ] && rsync_args="$rsync_args --bwlimit=$SEND_SPEED"
 
@@ -206,20 +230,17 @@ else
   fi
 fi
 
-# save background process
-PID=$!
-
 function cancel() {
   # kill rsync cleanly
-  kill -USR1 $PID
+  kill -USR1 %
 }
 
 # trap some signals
 trap cancel HUP INT PIPE TERM
-wait $PID
-trap - HUP INT PIPE TERM
-wait $PID
+wait % 2>/dev/null
 rc=$?
+trap - HUP INT PIPE TERM
+wait % 2>/dev/null
 [ $rc -ne 0 ] && log "error: $rc" && exit $rc
 
 log "finish"
