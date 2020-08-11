@@ -1,10 +1,10 @@
 #!/bin/sh
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# set-ddns v0.6 DDNS update script
+# set-ddns v0.8 DDNS update script
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright (C) 2019 Scott Shambarger
+# Copyright 2020 Scott Shambarger.  All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@
 #   nvram or wget (for WAN IP)
 #   dig or nslookup (for current DNS)
 #
-CONFIG="/etc/ddns.conf"
+CONFIG=${DDNS_CONFIG:-/etc/ddns.conf}
 OPTCONFIG="/opt/etc/ddns.conf"
 DDNS_SERVER="www.shambarger.net"
 DDNS_SERVER_FALLBACK="209.76.109.246"
@@ -127,7 +127,7 @@ resolve_host() {
 
 update_dns () {
   # <view> <key> <rrec>
-  "$NSUPDATE_EXE" -t 20 -R /dev/urandom -v << EOF
+  "$NSUPDATE_EXE" -t 20 -v << EOF
 server $server_ip
 update delete $DDNS_NAME $3
 update add $DDNS_NAME 600 $3 $wan_ip
