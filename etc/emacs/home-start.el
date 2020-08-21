@@ -30,8 +30,11 @@
 ;; don't truncate the message log buffer when it becomes large
 (setq message-log-max t)
 
-(when (file-directory-p "~/.emacs.d/site-lisp")
-  (add-to-list 'load-path "~/.emacs.d/site-lisp"))
+;; add ~/.emacs.d/lisp to path
+(let ((my-directory
+       (concat user-emacs-directory "lisp")))
+  (when (file-directory-p my-directory)
+    (add-to-list 'load-path my-directory)))
 
 (when (file-directory-p "/usr/local/share/emacs/site-lisp")
   (add-to-list 'load-path "/usr/local/share/emacs/site-lisp"))
@@ -229,6 +232,7 @@ of an error, just add the package to a list of missing packages."
 ;; Defaults
 
 (setq fill-column 75)
+(setq standard-indent 2)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Paren Mode
@@ -237,7 +241,8 @@ of an error, just add the package to a list of missing packages."
   (GNUEmacs
    (show-paren-mode t))
   (XEmacs
-   (paren-set-mode 'paren)))
+   (paren-set-mode 'paren))
+  (setq show-paren-delay 0))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lisp Mode
@@ -360,7 +365,7 @@ of an error, just add the package to a list of missing packages."
 (add-hook 'js-mode-hook 'myhome-js-mode-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Shell Mode
+;; Sh Mode (editing shell scripts)
 
 (defun myhome-sh-mode-hook ()
   "Hook to setup defaults in Shell mode"
@@ -538,8 +543,31 @@ If FACES is not provided or nil, use `face-list' instead."
 ;; Re-init with updated package-directory-list
 (when (fboundp 'package-initialize) (package-initialize))
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Web Mode (ELPA package, package-initialize first)
+;; Xterm Color (MELPA package)
+;;
+(when (try-require 'xterm-color)
+  (setq comint-terminfo-terminal "xterm-256color")
+  (setq comint-output-filter-functions
+        (remove 'ansi-color-process-output comint-output-filter-functions))
+  ;; these are colors used by xterm...
+  (setq xterm-color-names
+        ["#000000" "#CD0000" "#00CD00" "#CDCD00" "#0000EE" "#CD00CD" "#00CDCD" "#E5E5E5"])
+  (setq xterm-color-names-bright
+        ["#7F7F7F" "#FF0000" "#00FF00" "#FFFF00" "#5C5CFF" "#FF00FF" "#00FFFF" "#FFFFFF"])
+  (add-hook 'shell-mode-hook
+            (lambda ()
+              ;; Disable font-locking in this buffer to improve performance
+              (font-lock-mode -1)
+              ;; Prevent font-locking from being re-enabled in this buffer
+              (make-local-variable 'font-lock-function)
+              (setq font-lock-function (lambda (_) nil))
+              (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)))
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Web Mode (MELPA package)
 
 (when (fboundp 'web-mode)
   (add-to-list 'auto-mode-alist '("\\.html?\\'" . web-mode))
@@ -563,7 +591,7 @@ If FACES is not provided or nil, use `face-list' instead."
 (add-hook 'web-mode-hook 'myhome-web-mode-common-hook t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Magit (ELPA package, package-initialize first)
+;; Magit (MELPA package)
 (when (fboundp 'magit-status)
   (global-set-key (kbd "C-x g") 'magit-status)
   )
