@@ -547,7 +547,7 @@ If FACES is not provided or nil, use `face-list' instead."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Xterm Color (MELPA package)
 ;;
-(when (try-require 'xterm-color)
+(when (fboundp 'xterm-color-filter)
   (setq comint-terminfo-terminal "xterm-256color")
   (setq comint-output-filter-functions
         (remove 'ansi-color-process-output comint-output-filter-functions))
@@ -565,6 +565,14 @@ If FACES is not provided or nil, use `face-list' instead."
               (setq font-lock-function (lambda (_) nil))
               (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)))
   )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Bash Complete (MELPA package)
+;; bash-completion for <tab> complete in shell-mode
+
+(when (fboundp 'bash-completion-dynamic-complete)
+  (add-hook 'shell-dynamic-complete-functions
+            'bash-completion-dynamic-complete))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Web Mode (MELPA package)
