@@ -1,10 +1,10 @@
 #!/bin/bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# media-sync v1.1 Media Sync
+# media-sync v1.2 Media Sync
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright (C) 2020 Scott Shambarger
+# Copyright (C) Scott Shambarger
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -160,6 +160,7 @@ for f in "$@"; do
       ;;
     send)
       send=1
+      rsync_args="-u $rsync_args"
       ;;
     cancel)
       cancel=1
