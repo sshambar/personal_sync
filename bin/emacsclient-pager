@@ -21,39 +21,70 @@ case $0 in
   *) SUFFIX=;;
 esac
 
-# check how we were called
-[ -z "$1" ] && TMPFILE=$(mktemp -q $TMPDIR/emacs-tmp-XXXXXX)
+TARGET=
+FILECNT=0
+for OPT; do
+  case $OPT in
+    -*) ;;
+    *) TARGET=$OPT; ((FILECNT++));;
+  esac
+done
+
+if [[ $SUFFIX ]]; then
+
+  # diff uses tmpfile
+  TARGET=
+
+elif (($FILECNT > 1)); then
+
+  # fallback to multi-file blocking...
+  for OPT; do
+    case $OPT in
+      -*) ;;
+      *) [ ! -r "$OPT" ] && echo "can't read '$OPT'" && continue
+         $EDITOR -q "$OPT";;
+    esac
+  done
+  exit 0
+
+fi
+
+# no target, use tmpfile
+[[ $TARGET ]] || TMPFILE=$(mktemp -q $TMPDIR/emacs-tmp-XXXXXX)
 
 if [ -n "$TMPFILE" -a -w "$TMPFILE" ]; then
   if [[ $SUFFIX ]]; then
     # need .diff suffix so emacs will treat file as diff
-    mv "$TMPFILE" "${TMPFILE}${SUFFIX}"
-    [ $? -eq 0 ] && TMPFILE=${TMPFILE}${SUFFIX}
+    mv "$TMPFILE" "${TMPFILE}${SUFFIX}" &>/dev/null &&
+      TMPFILE=${TMPFILE}${SUFFIX}
   fi
-  # remove any color codes, [char]^H sequences...
-  if [ -n "$(command -v perl)" ]; then
-    perl -pe 's/\x1b\[[0-9;]*m//g;s/\x1b]4[^\\]*\\//g;s/.\x8//g' > "$TMPFILE"
+  if (($# > 0)); then
+    diff "$@" >> "$TMPFILE"
+    (($? > 1)) && exit 2
   else
-    # doesn't work if sed doesn't support "enhanced" basic expressions
-    sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b]4[^\\]*\\//g' -e 's/.\x08//g' > "$TMPFILE"
-  fi
+    # remove any color codes, [char]^H sequences...
+    if command -v perl &>/dev/null; then
+      perl -pe 's/\x1b\[[0-9;]*m//g;s/\x1b]4[^\\]*\\//g;s/.\x8//g' >> "$TMPFILE"
+    else
+      # doesn't work if sed doesn't support "enhanced" basic expressions
+      sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b]4[^\\]*\\//g' -e 's/.\x08//g' >> "$TMPFILE"
+    fi
 
-  if [ -n "$MYEC_TTY" -a -z "$ROWS" ]; then
-    stty --version &>/dev/null && FLAG=F || FLAG=f
-    ROWS=$(stty -a -$FLAG "$MYEC_TTY" 2>/dev/null | sed -E -e '/rows/!d' -e 's/^.*rows ([0-9]{1,});.*$/\1/' -e 's/^.* ([0-9]{1,}) rows.*$/\1/')
   fi
-  [ -z "$ROWS" ] && ROWS=40
-  LINES=$(head -$((ROWS + 10)) "$TMPFILE" | wc -l)
+  TARGET=$TMPFILE
+fi
 
-  if (( LINES < ROWS )); then
-    cat "$TMPFILE"
-  else
-    $EDITOR -n "$TMPFILE"
-  fi
+# need rows to figure if we just cat the file...
+if [ -n "$MYEC_TTY" -a -z "$ROWS" ]; then
+  stty --version &>/dev/null && FLAG=F || FLAG=f
+  ROWS=$(stty -a -$FLAG "$MYEC_TTY" 2>/dev/null | sed -E -e '/rows/!d' -e 's/^.*rows ([0-9]{1,});.*$/\1/' -e 's/^.* ([0-9]{1,}) rows.*$/\1/')
+fi
+[ -z "$ROWS" ] && ROWS=40
+
+LINES=$(head -$((ROWS + 10)) "$TARGET" | wc -l)
+
+if (( LINES < ROWS )); then
+  cat "$TARGET"
 else
-  # fallback to individual file handling...
-  while [[ $1 ]]; do
-    $EDITOR -n "$1"
-    shift
-  done
+  $EDITOR -n "$TARGET"
 fi
