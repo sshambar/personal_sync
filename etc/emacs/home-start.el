@@ -528,10 +528,7 @@ If FACES is not provided or nil, use `face-list' instead."
 (when (and (fboundp 'server-start)
            (not (zerop (length (getenv-internal "MYEC_SERVER_NAME")))))
   (setq server-name (getenv-internal "MYEC_SERVER_NAME"))
-  (server-start)
-  ;; export socket-dir to shells
-  (if (not server-use-tcp)
-      (setenv "MYEC_SERVER_SOCKDIR" server-socket-dir)))
+  (server-start))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; External packages

@@ -8,76 +8,51 @@
 #	   (not (zerop (length (getenv-internal "MYEC_SERVER_NAME")))))
 #  (setq server-name (getenv-internal "MYEC_SERVER_NAME"))
 #  (server-start)
-#  ;; export socket-dir to shells
-#  (if (not server-use-tcp)
-#      (setenv "MYEC_SERVER_SOCKDIR" server-socket-dir)))
 
-[ -n "$(command -v ediff)" ] && export MERGE=ediff
+command -v ediff &>/dev/null && export MERGE=ediff
 
 # Skip all for noninteractive shells.
 [ ! -t 0 ] && return
 
 setup_emacs() {
 
-  local myec_version
-
-  if [ `id -ru` != 0 -a -n "$(command -v emacsclient)" ]; then
-    myec_version=$(emacsclient -V)
-    myec_version=${myec_version##* }
-    myec_version=${myec_version%%.*}
-    # before version 23:
-    #  no -c (create-frame)
-    #  -a "" doesn't start daemon,
-    #  no -t (current-terminal)
-  fi
-
   if [ -n "$INSIDE_EMACS" ]; then
     # fallback pager
     export PAGER="/bin/cat"
   fi
 
-  if [ -n "$INSIDE_EMACS" -a -n "$MYEC_SERVER_SOCKDIR" ]; then
+  command -v emacsclient &>/dev/null || return
 
-    MYEC_SERVER_NAME="${MYEC_SERVER_NAME:-server}"
-    local myec_server_sock="$MYEC_SERVER_SOCKDIR/$MYEC_SERVER_NAME"
+  # shell inside emacs, and server alive...
+  if [ -n "$INSIDE_EMACS" ] &&
+       emacsclient -s "$MYEC_SERVER_NAME" -e t &>/dev/null; then
 
-    # check client version vs server
-    if [ -n "$myec_version" ]; then
-      case "$INSIDE_EMACS" in
-        ${myec_version}*) ;;
-        *) myec_version= ;;
-      esac
-    fi
+    # EDITOR should block inside emacs
+    export EDITOR="emacsclient -s $MYEC_SERVER_NAME"
 
-    # shell inside emacs
-    if [ -n "$myec_version" -a -S "$myec_server_sock" ]; then
+    # emacs/less/man should give prompt back inside emacs
+    alias emacs="$EDITOR -n" 2>/dev/null
+    alias less="$EDITOR -n" 2>/dev/null
+    alias more="$EDITOR -n" 2>/dev/null
+    # just handle one man entry...
+    man() { $EDITOR >/dev/null -n -e "(man \"$1\")"; }
 
-      # we have emacsclient and a running daemon
-
-      # EDITOR should block inside emacs
-      export EDITOR="emacsclient -s $myec_server_sock"
-
-      # emacs/less/man should give prompt back inside emacs
-      alias emacs="$EDITOR -n" 2>/dev/null
-      alias less="$EDITOR -n" 2>/dev/null
-      alias more="$EDITOR -n" 2>/dev/null
-      # just handle one man entry...
-      man() { $EDITOR >/dev/null -n -e "(man \"$1\")"; }
-
-      # use emacsclient-pager if available (handles stdin)
-      if [ -n "$(command -v emacsclient-pager)" ]; then
-        # MYEC_TTY is used to get current rows
-        export MYEC_TTY=$(tty)
-        PAGER="emacsclient-pager"
-        if [ -n "$(command -v emacsclient-diff)" ]; then
-          export DIFF_PAGER="emacsclient-diff"
-        else
-          export DIFF_PAGER=$PAGER
-        fi
+    # use emacsclient-pager if available (handles stdin)
+    if command -v emacsclient-pager &>/dev/null; then
+      # MYEC_TTY is used to get current rows
+      export MYEC_TTY=$(tty)
+      PAGER="emacsclient-pager"
+      alias less="$PAGER" 2>/dev/null
+      alias more="$PAGER" 2>/dev/null
+      if command -v emacsclient-diff &>/dev/null; then
+        export DIFF_PAGER="emacsclient-diff"
+        alias diff="$DIFF_PAGER" 2>/dev/null
+      else
+        export DIFF_PAGER=$PAGER
       fi
     fi
 
-  elif [ -n "$myec_version" ]; then
+  else
 
     # outside emacs, have emacsclient
     local myec_tty=$(tty)
