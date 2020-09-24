@@ -31,9 +31,10 @@ setup_emacs() {
     export EDITOR="emacsclient -s $MYEC_SERVER_NAME"
 
     # emacs/less/man should give prompt back inside emacs
-    alias emacs="$EDITOR -n" 2>/dev/null
-    alias less="$EDITOR -n" 2>/dev/null
-    alias more="$EDITOR -n" 2>/dev/null
+    alias emacs="$EDITOR -n"
+    alias vi="$EDITOR -n"
+    alias less="$EDITOR -n"
+    alias more="$EDITOR -n"
     # just handle one man entry...
     man() { $EDITOR >/dev/null -n -e "(man \"$1\")"; }
 
@@ -42,11 +43,11 @@ setup_emacs() {
       # MYEC_TTY is used to get current rows
       export MYEC_TTY=$(tty)
       PAGER="emacsclient-pager"
-      alias less="$PAGER" 2>/dev/null
-      alias more="$PAGER" 2>/dev/null
+      alias less="$PAGER"
+      alias more="$PAGER"
       if command -v emacsclient-diff &>/dev/null; then
         export DIFF_PAGER="emacsclient-diff"
-        alias diff="$DIFF_PAGER" 2>/dev/null
+        alias diff="$DIFF_PAGER"
       else
         export DIFF_PAGER=$PAGER
       fi
