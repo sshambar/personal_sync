@@ -3,6 +3,7 @@
 ;; PREFIX myhome- used for hooks.
 
 ;; Copy/link to /usr/local/share/emacs/site-lisp/site-start.d
+;;  (or /etc/emacs/site-start.d/99home-start.el)
 ;;
 ;; Identify what parts of your `.emacs' take so long. You can do
 ;; this e.g. by starting emacs with "emacs -q", set up your
@@ -31,10 +32,11 @@
 (setq message-log-max t)
 
 ;; add ~/.emacs.d/lisp to path
-(let ((my-directory
-       (concat user-emacs-directory "lisp")))
-  (when (file-directory-p my-directory)
-    (add-to-list 'load-path my-directory)))
+(when (boundp 'user-emacs-directory)
+  (let ((my-directory
+         (concat user-emacs-directory "lisp")))
+    (when (file-directory-p my-directory)
+      (add-to-list 'load-path my-directory))))
 
 (when (file-directory-p "/usr/local/share/emacs/site-lisp")
   (add-to-list 'load-path "/usr/local/share/emacs/site-lisp"))
