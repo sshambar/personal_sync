@@ -1,0 +1,93 @@
+#!/bin/sh
+
+# finish-upgrade v1.0
+
+# Installs all extra packages, and fixes up things like admin_user dir
+
+[ $(id -u) -ne 0 ] && echo "Run as root!" && exit 1
+
+[ "$1" = "-d" ] && debug=echo
+
+set -e
+
+echo
+echo "Finishing upgrade...${debug:+DEBUG}"
+echo
+
+if [ \! -f /tmp/opkg-lists/openwrt_base ]; then
+  $debug opkg update
+fi
+
+_is_installed() { # <name>
+  opkg status "$1" | grep -q 'Status:.*installed'
+}
+
+_install_pkg() { # <name>
+  _is_installed "$1" && return
+  $debug opkg install "$1"
+}
+
+install_pkgs() { # <name>...
+  while [[ $1 ]]; do
+    _install_pkg "$1" || return
+    shift
+  done
+}
+
+_disable_pkg() { # <name>
+  _is_installed "$1" || return 0
+  local init_file=$(opkg files "$1" | grep "^/etc/init.d/" | head -1)
+  [ -z "$init_file" ] && echo "Package $1 has no init.d file" && return 1
+  [ $("$init_file" status) == running ] && $debug "$init_file" stop
+  local app=${init_file##*/}
+  [ -f /etc/rc.d/*$app ] || return 0
+  echo disabling $app
+  $debug "$init_file" disable
+}
+
+disable_pkgs() { # <name>...
+  while [[ $1 ]]; do
+    _disable_pkg "$1" || return
+    shift
+  done
+}
+
+disable_pkgs dnscrypt-proxy2 igmpproxy samba4-server wsdd2
+
+install_pkgs openssh-server shadow-su diffutils
+
+ADMIN_USER=
+[ -r /etc/admin.user ] && ADMIN_USER=$(< /etc/admin.user)
+
+if [ -n "$ADMIN_USER" -a -d "/$ADMIN_USER" ]; then
+  echo "fixing /$ADMIN_USER"
+  $debug chgrp -R "$ADMIN_USER" "/$ADMIN_USER"
+fi
+
+# check for homedns
+if [ -f /etc/hotplug.d/iface/90-homedns ]; then
+  install_pkgs bind-client bind-dig
+fi
+
+# remove busybox less
+[ -h /usr/bin/less ] && rm -f /usr/bin/less || :
+install_pkgs less || { ln -s ../../bin/busybox less; exit 1; }
+
+# regular packages
+install_pkgs bash less openssh-client lsof
+
+# non-basic install
+install_pkgs curl ca-bundle procps-ng-ps luci-app-sqm
+
+# check for mwan3
+if [ -f /etc/config/mwan3 ]; then
+  install_pkgs mwan3 luci-app-mwan3
+fi
+
+if [ -f /usr/sbin/media-mount ]; then
+  install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup
+  install_pkgs kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac kmod-crypto-ecb
+fi
+
+echo
+echo "Upgrade finished!"

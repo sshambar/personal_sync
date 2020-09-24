@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# list-user-installed v1.0
+
+# find user installed programs that have different version
+# or don't exist in /rom
+
+ROM=$(sed -ne '/^Package:[[:blank:]]*/ { s///; h; }
+/^Version:[[:blank:]]*/ { s///; H; g; s/\n/#/; p;}' /rom/usr/lib/opkg/status)
+
+CUR=$(sed -ne '/^Package:[[:blank:]]*/ { s///; h; }
+/^Version:[[:blank:]]*/ { s///;	H; }
+/^Status:.*user installed/ { g;	s/\n/#/; p; }' /usr/lib/opkg/status)
+
+for prog in $CUR; do
+  for romprog in $ROM; do
+    [ "$prog" = "$romprog" ] && continue 2
+  done
+  echo "${prog%%#*}"
+done

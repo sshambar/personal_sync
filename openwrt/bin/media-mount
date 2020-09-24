@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# media-mount v1.0
+
+# mount encyrpted media, prompting for password
+
+#PART=/dev/mmcblk0p3
+PART=/dev/sda3
+DEV=media
+MP=/mnt/media
+
+if [ "$1" = stop ]; then
+  grep -q "$MP" /proc/mounts && umount "$MP"
+  cryptsetup close $DEV
+  exit
+fi
+
+if [ ! -b /dev/mapper/$DEV ]; then
+  cryptsetup open $PART $DEV
+  [ $? -ne 0 ] && exit
+fi
+
+MNT=$(grep "$MP" /proc/mounts)
+if [ -z "$MNT" ]; then
+  fsck.ext4 /dev/mapper/$DEV
+  [ $? -ne 0 ] && exit
+  mkdir -p "$MP"
+  mount -t ext4 -o ro /dev/mapper/$DEV "$MP"
+  [ $? -ne 0 ] && exit
+  echo "Mounted $MP"
+else
+  echo "$MP already mounted"
+fi
+
