@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.0
+# finish-upgrade v1.1
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -52,7 +52,7 @@ disable_pkgs() { # <name>...
   done
 }
 
-disable_pkgs dnscrypt-proxy2 igmpproxy samba4-server wsdd2
+disable_pkgs dnscrypt-proxy2 samba4-server wsdd2
 
 install_pkgs openssh-server shadow-su diffutils
 
@@ -74,14 +74,19 @@ fi
 install_pkgs less || { ln -s ../../bin/busybox less; exit 1; }
 
 # regular packages
-install_pkgs bash less openssh-client lsof
+install_pkgs bash openssh-client lsof
 
 # non-basic install
-install_pkgs curl ca-bundle procps-ng-ps luci-app-sqm
+install_pkgs curl ca-bundle procps-ng-ps
+
+# check for sqm
+if [ -f /etc/config/sqm ]; then
+  install_pkgs luci-app-sqm
+fi
 
 # check for mwan3
 if [ -f /etc/config/mwan3 ]; then
-  install_pkgs mwan3 luci-app-mwan3
+  install_pkgs luci-app-mwan3
 fi
 
 if [ -f /usr/sbin/media-mount ]; then
