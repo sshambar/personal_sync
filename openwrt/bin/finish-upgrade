@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.1
+# finish-upgrade v1.2
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -69,9 +69,8 @@ if [ -f /etc/hotplug.d/iface/90-homedns ]; then
   install_pkgs bind-client bind-dig
 fi
 
-# remove busybox less
-[ -h /usr/bin/less ] && rm -f /usr/bin/less || :
-install_pkgs less || { ln -s ../../bin/busybox less; exit 1; }
+# older less pkgs fail, ignore failure
+install_pkgs less || :
 
 # regular packages
 install_pkgs bash openssh-client lsof
