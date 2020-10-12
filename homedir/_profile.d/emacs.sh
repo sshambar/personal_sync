@@ -29,6 +29,8 @@ setup_emacs() {
 
     # EDITOR should block inside emacs
     export EDITOR="emacsclient -s $MYEC_SERVER_NAME"
+    # remove VISUAL, it may mask EDITOR
+    unset VISUAL
 
     # emacs/less/man should give prompt back inside emacs
     alias emacs="$EDITOR -n"
