@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.2
+# finish-upgrade v1.3
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -14,8 +14,10 @@ echo
 echo "Finishing upgrade...${debug:+DEBUG}"
 echo
 
-if [ \! -f /tmp/opkg-lists/openwrt_base ]; then
+# update if opkg lists missing or old
+if ! [ "$(find 2>/dev/null /var/opkg-lists/openwrt_base -mtime -1)" ]; then
   $debug opkg update
+  touch /var/opkg-lists/openwrt_base
 fi
 
 _is_installed() { # <name>
@@ -40,7 +42,7 @@ _disable_pkg() { # <name>
   [ -z "$init_file" ] && echo "Package $1 has no init.d file" && return 1
   [ $("$init_file" status) == running ] && $debug "$init_file" stop
   local app=${init_file##*/}
-  [ -f /etc/rc.d/*$app ] || return 0
+  [ -h /etc/rc.d/S*$app ] || return 0
   echo disabling $app
   $debug "$init_file" disable
 }
@@ -54,7 +56,8 @@ disable_pkgs() { # <name>...
 
 disable_pkgs dnscrypt-proxy2 samba4-server wsdd2
 
-install_pkgs openssh-server shadow-su diffutils
+# core stuff
+install_pkgs diffutils bash
 
 ADMIN_USER=
 [ -r /etc/admin.user ] && ADMIN_USER=$(< /etc/admin.user)
@@ -62,6 +65,13 @@ ADMIN_USER=
 if [ -n "$ADMIN_USER" -a -d "/$ADMIN_USER" ]; then
   echo "fixing /$ADMIN_USER"
   $debug chgrp -R "$ADMIN_USER" "/$ADMIN_USER"
+
+  install_pkgs shadow-su
+fi
+
+if [ -s /etc/ssh/sshd_config ]; then
+  # install sshd only if we use it
+  install_pkgs openssh-server
 fi
 
 # check for homedns
@@ -73,10 +83,10 @@ fi
 install_pkgs less || :
 
 # regular packages
-install_pkgs bash openssh-client lsof
+install_pkgs openssh-client lsof
 
 # non-basic install
-install_pkgs curl ca-bundle procps-ng-ps
+install_pkgs curl ca-bundle procps-ng-ps tcpdump-mini iperf3
 
 # check for sqm
 if [ -f /etc/config/sqm ]; then
