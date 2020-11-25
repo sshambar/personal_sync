@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.3
+# finish-upgrade v1.4
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -20,12 +20,12 @@ if ! [ "$(find 2>/dev/null /var/opkg-lists/openwrt_base -mtime -1)" ]; then
   touch /var/opkg-lists/openwrt_base
 fi
 
-_is_installed() { # <name>
+is_installed() { # <name>
   opkg status "$1" | grep -q 'Status:.*installed'
 }
 
 _install_pkg() { # <name>
-  _is_installed "$1" && return
+  is_installed "$1" && return
   $debug opkg install "$1"
 }
 
@@ -37,7 +37,7 @@ install_pkgs() { # <name>...
 }
 
 _disable_pkg() { # <name>
-  _is_installed "$1" || return 0
+  is_installed "$1" || return 0
   local init_file=$(opkg files "$1" | grep "^/etc/init.d/" | head -1)
   [ -z "$init_file" ] && echo "Package $1 has no init.d file" && return 1
   [ $("$init_file" status) == running ] && $debug "$init_file" stop
@@ -79,8 +79,12 @@ if [ -f /etc/hotplug.d/iface/90-homedns ]; then
   install_pkgs bind-client bind-dig
 fi
 
-# older less pkgs fail, ignore failure
-install_pkgs less || :
+# older less pkgs fail, workaround error
+if ! is_installed less; then
+  $debug rm -f /usr/bin/less
+  $debug opkg install --force-overwrite less || \
+    { ln -s ../bin/busybox /usr/bin/less; exit 1; }
+fi
 
 # regular packages
 install_pkgs openssh-client lsof
@@ -100,7 +104,8 @@ fi
 
 if [ -f /usr/sbin/media-mount ]; then
   install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup
-  install_pkgs kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac kmod-crypto-ecb
+  install_pkgs kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac \
+    kmod-crypto-ecb
 fi
 
 echo
