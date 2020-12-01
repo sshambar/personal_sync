@@ -71,6 +71,9 @@ fi
 
 shopt -s extglob histappend
 
+# don't annoy us...
+export BASH_SILENCE_DEPRECATION_WARNING=1
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
