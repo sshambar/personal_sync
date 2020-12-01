@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.4
+# finish-upgrade v1.5
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -60,7 +60,7 @@ disable_pkgs dnscrypt-proxy2 samba4-server wsdd2
 install_pkgs diffutils bash
 
 ADMIN_USER=
-[ -r /etc/admin.user ] && ADMIN_USER=$(< /etc/admin.user)
+[ -r /etc/admin.user ] && ADMIN_USER=$(cat /etc/admin.user)
 
 if [ -n "$ADMIN_USER" -a -d "/$ADMIN_USER" ]; then
   echo "fixing /$ADMIN_USER"
