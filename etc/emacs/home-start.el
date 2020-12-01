@@ -536,11 +536,13 @@ If FACES is not provided or nil, use `face-list' instead."
 ;; External packages
 
 ;; Use secure connection to ELPA
-(setq package-archives '(("gnu" . "https://elpa.gnu.org/packages/")
-                         ("melpa" . "https://stable.melpa.org/packages/")))
+(customize-set-variable 'package-archives
+                        '(("gnu" . "https://elpa.gnu.org/packages/")
+                          ("melpa" . "https://stable.melpa.org/packages/")))
 
 ;; Re-init with updated package-directory-list
-(when (fboundp 'package-initialize) (package-initialize))
+(when (version< emacs-version "27.0")
+  (when (fboundp 'package-initialize) (package-initialize)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
