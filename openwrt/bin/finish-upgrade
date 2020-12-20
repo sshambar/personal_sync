@@ -1,12 +1,15 @@
 #!/bin/sh
 
-# finish-upgrade v1.5
+# finish-upgrade v1.6
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
 [ $(id -u) -ne 0 ] && echo "Run as root!" && exit 1
 
-[ "$1" = "-d" ] && debug=echo
+[ "$1" = "-d" ] && shift && debug=echo
+
+full=
+[ "$1" = full ] && shift && full=1
 
 set -e
 
@@ -76,7 +79,7 @@ fi
 
 # check for homedns
 if [ -f /etc/hotplug.d/iface/90-homedns ]; then
-  install_pkgs bind-client bind-dig
+  install_pkgs bind-client bind-dig curl ca-bundle
 fi
 
 # older less pkgs fail, workaround error
@@ -87,10 +90,10 @@ if ! is_installed less; then
 fi
 
 # regular packages
-install_pkgs openssh-client lsof
+[ -z "$full" ] || install_pkgs openssh-client lsof
 
 # non-basic install
-install_pkgs curl ca-bundle procps-ng-ps tcpdump-mini iperf3
+install_pkgs procps-ng-ps tcpdump-mini iperf3
 
 # check for sqm
 if [ -f /etc/config/sqm ]; then
