@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -e
+
+usage() {
+  echo "Usage: ${0##*/} <volume>"
+  echo "  Disables indexing, searching and removes index-store on <volume>"
+  exit $1
+}
+
+err() {
+  echo "$*"
+  exit 1
+}
+
+[ -n "$1" ] || usage 1
+
+[ "$1" = "-h" -o "$1" = "--help" ] && usage 0 || :
+
+VOL=${1#/Volumes}
+VOL=${VOL#/}
+
+[ -n "$VOL" -a -d "/Volumes/$VOL" ] || err "Not a mounted volume: $1"
+
+echo "Disabling indexing, searching, and index-store on /Volumes/$VOL"
+sudo mdutil -i off -d -E "/Volumes/$VOL"
