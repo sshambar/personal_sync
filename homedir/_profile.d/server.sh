@@ -35,6 +35,8 @@ else
   }
 fi
 
+[ -n "$INSIDE_EMACS" ] && export SYSTEMD_PAGER=
+
 # Local Variables:
 # sh-basic-offset: 2
 # indent-tabs-mode: nil
