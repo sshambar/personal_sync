@@ -10,7 +10,8 @@
 }
 
 if [ "${EUID:-}" != 0 ] ; then
-  [ -z "$XDG_RUNTIME_DIR" ] && export XDG_RUNTIME_DIR="/run/user/$(/bin/id -u)"
+  [ -z "$XDG_RUNTIME_DIR" -a -d "/run/user/$EUID" ] && \
+    export XDG_RUNTIME_DIR="/run/user/$EUID"
   alias sc='systemctl --user'
   alias jc='journalctl --user'
   # use dnf cache files if not running as root
