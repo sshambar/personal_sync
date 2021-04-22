@@ -10,26 +10,28 @@ add_root_path /opt/local/ before
 # Rest for interactive terminals only
 [ ! -t 0 ] && return
 
-# local paths
-if [ $EUID -eq 0 ]; then
-  add_path PATH /sbin before
-  add_path PATH /usr/sbin before
-  add_path PATH /usr/local/sbin before
-  add_path PATH /opt/local/sbin before
-fi
-
-# re-order this early
-add_path PATH /usr/local/bin before
-add_path PATH ~/.bin
-add_path INFOPATH /opt/local/share/info/emacs before
-
 # developer bin
 add_path PATH /Applications/Xcode.app/Contents/Developer/usr/bin
 add_path PATH /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
 
+# local sbin (always for sudo)
+#if [ $EUID -eq 0 ]; then
+  add_path PATH /sbin before
+  add_path PATH /usr/sbin before
+  add_path PATH /usr/local/sbin before
+  add_path PATH /opt/local/sbin before
+#fi
+
+# order these early
+add_path PATH /usr/local/bin before
+add_path PATH ~/.bin before
+
 # developer man pages
 add_path MANPATH /Applications/Xcode.app/Contents/Developer/usr/share/man
 add_path MANPATH /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/share/man
+
+# macports emacs
+add_path INFOPATH /opt/local/share/info/emacs before
 
 # macports devel directories
 if [ -d /opt/local/lib ]; then
