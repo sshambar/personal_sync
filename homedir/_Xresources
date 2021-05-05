@@ -7,7 +7,7 @@ emacs*Foreground: GhostWhite
 emacs*pointerColor: yellow
 emacs*cursorColor: yellow
 emacs*bitmapIcon: on
-emacs*font: -*-lucidatypewriter-medium-r-normal-*-*-140-*-*-*-*-iso8859-*
+emacs*font: -*-lucidatypewriter-medium-r-*-*-*-140-75-*-*-*-iso10646-*
 emacs.geometry: 80x46+50+75
 emacs.menuBar*font: -*-helvetica-medium-r-*-*-*-120-*-*-*-*-iso8859-*
 emacs*XlwScrollBar.Background: SlateGray2
@@ -21,7 +21,7 @@ xemacs*Foreground: GhostWhite
 xemacs*pointerColor: yellow
 xemacs*cursorColor: yellow
 xemacs*bitmapIcon: on
-xemacs*font: -*-lucidatypewriter-medium-r-normal-*-*-140-*-*-*-*-iso8859-*
+xemacs*font: -*-lucidatypewriter-medium-r-*-*-*-140-75-*-*-*-iso10646-*
 xemacs.geometry: 80x46+50+75
 xemacs.menuBar*font: -*-helvetica-medium-r-*-*-*-120-*-*-*-*-iso8859-*
 xemacs*XlwScrollBar.Background: SlateGray2
@@ -44,6 +44,7 @@ XTerm*VT100*Scrollbar.Background: gray50
 ! vt100 widget
 XTerm*VT100*utf8: 1
 XTerm*VT100*locale: UTF-8
+XTerm.vt100.answerbackString: xterm-256color
 XTerm*VT100*metaSendsEscape: true
 XTerm*VT100*eightBitControl: false
 XTerm*VT100*eightBitInput: true
@@ -52,32 +53,41 @@ XTerm*VT100.multiScroll: true
 XTerm*VT100.rightScrollBar: true
 XTerm*VT100.scrollBar: true
 XTerm*VT100.saveLines: 10000
-XTerm*VT100.geometry: 80x46
+XTerm*VT100.geometry: 80x45
 XTerm*VT100.visualBell: true
 XTerm*VT100.titeInhibit: false
 XTerm*VT100*reverseWrap: true
 XTerm*VT100*backarrowKey: false
 XTerm*VT100*scrollTtyOutput: false
 XTerm*VT100*scrollKey: true
-XTerm*VT100*font: -*-lucidatypewriter-medium-r-normal-*-14-*-*-*-*-*-iso8859-*
-! unreadable
-XTerm*VT100*font1: -*-lucidatypewriter-medium-r-normal-*-8-*-*-*-*-*-iso8859-*
-XTerm*VT100*font2: -*-lucidatypewriter-medium-r-normal-*-10-*-*-*-*-*-iso8859-*
-XTerm*VT100*font3: -*-lucidatypewriter-medium-r-normal-*-12-*-*-*-*-*-iso8859-*
-XTerm*VT100*font4: -*-lucidatypewriter-medium-r-normal-*-17-*-*-*-*-*-iso8859-*
-XTerm*VT100*font5: -*-lucidatypewriter-medium-r-normal-*-20-*-*-*-*-*-iso8859-*
+! Set faceName to use scalable fonts (NOTE: XQuartz is slow in TrueColor
+!   without which scalable fonts dont align correctly...)
+! See XQuartz bug: https://gitlab.freedesktop.org/xorg/xserver/issues/188
+!XTerm*VT100*faceName: Droid Sans Mono Slashed
+!XTerm*VT100*faceName: Source Code Pro
+!XTerm*VT100*faceSize: 10.5
+!XTerm*VT100*faceSize1: 5
+XTerm*VT100*fastScroll: true
+!XTerm*VT100*font: -*-lucidatypewriter-medium-r-normal-*-*-140-*-*-*-*-iso8859-*
+XTerm*VT100*font: -*-lucidatypewriter-medium-r-*-*-*-140-75-*-*-*-iso10646-*
+! font1 is "unreadable"
+XTerm*VT100*font1: -*-lucidatypewriter-medium-r-*-*-*-80-75-*-*-*-iso10646-*
+XTerm*VT100*font2: -*-lucidatypewriter-medium-r-*-*-*-100-75-*-*-*-iso10646-*
+XTerm*VT100*font3: -*-lucidatypewriter-medium-r-*-*-*-120-75-*-*-*-iso10646-*
+XTerm*VT100*font4: -*-lucidatypewriter-medium-r-*-*-*-140-75-*-*-*-iso10646-*
+XTerm*VT100*font5: -*-lucidatypewriter-medium-r-*-*-*-180-75-*-*-*-iso10646-*
 ! huge
-XTerm*VT100*font6: -*-lucidatypewriter-medium-r-normal-*-34-*-*-*-*-*-iso8859-*
+XTerm*VT100*font6: -*-lucidatypewriter-medium-r-*-*-*-240-75-*-*-*-iso10646-*
 XTerm*VT100*cursorColor: SpringGreen
 XTerm*VT100.cursorBlink: true
 ! XTerm*VT100.cursorOnTime: 500
 ! XTerm*VT100.cursorOffTime: 500
-XTerm*VT100*colorBDMode: on
-XTerm*VT100*colorBD: SpringGreen
-XTerm*VT100*colorBLMode: on
-XTerm*VT100*colorBL: MediumOrchid
-XTerm*VT100*colorULMode: on
-XTerm*VT100*colorUL: Cyan
+!XTerm*VT100*colorBDMode: on
+!XTerm*VT100*colorBD: SpringGreen
+!XTerm*VT100*colorBLMode: on
+!XTerm*VT100*colorBL: MediumOrchid
+!XTerm*VT100*colorULMode: on
+!XTerm*VT100*colorUL: Cyan
 XTerm*VT100*dynamicColors: true
 XTerm*VT100*colorAttrMode: on
 ! keybinding overrides
@@ -104,14 +114,15 @@ XTerm*VT100.Translations: #override\n\
 ! Shift<KeyPress>Next : scroll-forw(1,page)\n\
 
 ! http://web.archive.org/web/20090130061234/http://phraktured.net/terminal-colors
-! Theme Three
+! Theme Three (modified for better blue)
 XTerm*VT100*background: black
 XTerm*VT100*foreground: peachpuff
 XTerm*VT100*color0:     rgb:00/00/00
 XTerm*VT100*color1:     rgb:e0/10/10
 XTerm*VT100*color2:     rgb:20/ad/20
 XTerm*VT100*color3:     rgb:d4/c2/4f
-XTerm*VT100*color4:     rgb:23/1b/b8
+!XTerm*VT100*color4:     rgb:23/1b/b8
+XTerm*VT100*color4:     rgb:23/66/ff
 XTerm*VT100*color5:     rgb:9c/38/85
 XTerm*VT100*color6:     rgb:1d/bd/b8
 XTerm*VT100*color7:     rgb:fe/fe/fe
@@ -119,7 +130,8 @@ XTerm*VT100*color8:     rgb:6a/6a/6a
 XTerm*VT100*color9:     rgb:e8/3a/3d
 XTerm*VT100*color10:    rgb:35/e9/56
 XTerm*VT100*color11:    rgb:ff/ff/2f
-XTerm*VT100*color12:    rgb:3a/53/f0
+!XTerm*VT100*color12:    rgb:3a/53/f0
+XTerm*VT100*color12:    rgb:41/66/ff
 XTerm*VT100*color13:    rgb:e6/28/ba
 XTerm*VT100*color14:    rgb:1c/f5/f5
 XTerm*VT100*color15:    rgb:ff/ff/ff
