@@ -1,0 +1,38 @@
+#!/bin/bash
+
+LOCAL_USER=bogus
+
+[ "$1" = "-h" ] && {
+  echo "Usage: ${0##*/} [ real ] [ <options> ]"
+  echo "  If real, use Ookla's version, otherwise python alternative"
+  exit
+}
+
+if [ $UID -eq 0 ]; then
+  rpath=`realpath $0`
+  if [[ $(command -v setpriv) ]]; then
+    gid=$(id -rg 2>/dev/null "$LOCAL_USER")
+    [ -z "$gid" ] && echo "Unknown local user $LOCAL_USER" && exit 2
+    exec setpriv --reset-env --no-new-privs --reuid=$LOCAL_USER --regid=$gid --init-groups "$rpath" "$@"
+  else
+    exec su -s /bin/bash -c "$(printf "%q " "$rpath" "$@")" $LOCAL_USER
+  fi
+fi
+
+if [ "$USER" != "$LOCAL_USER" ]; then
+  echo "Only run as user $LOCAL_USER or root (which will setpriv)"
+  exit 1
+fi
+
+SPEEDTEST="/usr/bin/speedtest-cli"
+[ -x "$SPEEDTEST" ] || SPEEDTEST="/usr/bin/speedtest"
+
+[ "$1" = "real" ] && { SPEEDTEST="/usr/bin/speedtest"; shift; }
+
+[ -x "$SPEEDTEST" ] || {
+  echo "No speedtest ($SPEEDTEST) installed!"
+  exit 1
+}
+
+exec "$SPEEDTEST" "$@"
+
