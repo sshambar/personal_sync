@@ -1,0 +1,84 @@
+# who ever thought of using ^A for escape?
+escape ^P^P
+
+# no utmp
+deflogin off
+
+# Ugh, annoying
+startup_message off
+
+# let terminal decide
+vbell off
+
+# disable .termcap dump
+bind .
+
+# region sizing
+bind = resize =
+bind + resize +1
+bind - resize -1
+bind _ resize max
+
+#remove some stupid / dangerous key bindings
+bind ^k
+bind ^\
+#make them better
+bind \\ quit
+
+# pass C-s/C-q to programs
+defflow off
+
+# lots to save
+defscrollback 10000
+
+# case free searching
+ignorecase on
+
+#
+# xterm
+#
+
+# xterm can switch to dark background
+termcapinfo xterm|xterm-* 'VR=\E[?5h:VN=\E[?5l'
+
+# Make the output buffer large for (fast) xterms
+termcapinfo xterm* OL=10000
+
+# xterm-52 - uses background color for delete operations
+termcapinfo xterm* be
+
+# special xterm hardstatus: use the window title.
+termcapinfo xterm|xterm-* 'hs:ts=\E]2;:fs=\007:ds=\E]2;screen\007'
+
+# emulate part of the 'K' charset
+termcapinfo   xterm|xterm-* 'XC=K%,%\E(B,[\304,\\\\\326,]\334,{\344,|\366,}\374,~\337'
+
+#
+# vt100/linux
+#
+
+#the vt100 description does not mention "dl". *sigh*
+termcapinfo vt100 dl=5\E[M
+
+# Extend the vt100 desciption by some sequences.
+termcap  vt100* ms:AL=\E[%dL:DL=\E[%dM:UP=\E[%dA:DO=\E[%dB:LE=\E[%dD:RI=\E[%dC
+terminfo vt100* ms:AL=\E[%p1%dL:DL=\E[%p1%dM:UP=\E[%p1%dA:DO=\E[%p1%dB:LE=\E[%p1%dD:RI=\E[%p1%dC
+termcapinfo linux C8
+
+# altscreen on all terminals
+altscreen on
+
+# more fun stuff
+nethack on
+#idle 300 blanker
+#blankerprg cmatrix -b -a
+
+# status line
+msgwait 3
+hardstatus string 'screen %n%?: %t%?%? - %h%?'
+
+# Color!
+term screen-256color
+
+#shell /opt/local/bin/bash
+
