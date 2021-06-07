@@ -66,8 +66,10 @@ ADMIN_USER=
 [ -r /etc/admin.user ] && ADMIN_USER=$(cat /etc/admin.user)
 
 if [ -n "$ADMIN_USER" -a -d "/$ADMIN_USER" ]; then
-  echo "fixing /$ADMIN_USER"
-  $debug chgrp -R "$ADMIN_USER" "/$ADMIN_USER"
+  if [ -G "/$ADMIN_USER" ]; then
+    echo "fixing /$ADMIN_USER"
+    $debug chgrp -R "$ADMIN_USER" "/$ADMIN_USER"
+  fi
 
   install_pkgs shadow-su
 fi
@@ -89,9 +91,6 @@ if ! is_installed less; then
     { ln -s ../bin/busybox /usr/bin/less; exit 1; }
 fi
 
-# regular packages
-[ -z "$full" ] || install_pkgs openssh-client lsof
-
 # non-basic install
 install_pkgs procps-ng-ps tcpdump-mini iperf3
 
@@ -109,6 +108,13 @@ if [ -f /usr/sbin/media-mount ]; then
   install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup
   install_pkgs kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac \
     kmod-crypto-ecb
+fi
+
+# regular packages
+if [ -n "$full" ]; then
+ install_pkgs openssh-client lsof screen haveged htop dmesg
+ install_pkgs luci-app-uhttpd luci-ssl
+ grep -q kernel2 /proc/mtd && install_pkgs luci-app-advanced-reboot || :
 fi
 
 echo
