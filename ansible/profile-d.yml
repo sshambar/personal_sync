@@ -1,0 +1,10 @@
+---
+- name: Install profile.d files
+  copy:
+    src: "../homedir/_profile.d/{{ item }}"
+    dest: "/etc/profile.d/{{ item }}"
+  loop:
+    - common.sh
+    - emacs.sh
+    - server.sh
+    - title.sh

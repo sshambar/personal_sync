@@ -1,0 +1,54 @@
+---
+- name: Create directories
+  file:
+    dest: "{{ item }}"
+    state: directory
+    mode: 0755
+  loop:
+    - "/usr/share/emacs/site-lisp/site-start.d"
+    - "/usr/local/share/emacs/site-lisp/site-start.d"
+    - "/usr/local/share/emacs/site-lisp/themes"
+- name: Check for site-start.el in /usr/local site-start
+  stat:
+    path: "/usr/local/share/emacs/site-lisp/site-start.el"
+  register: emacs_stat
+- name: Install site-start.el in /usr/local
+  when: not emacs_stat.stat.exists
+  copy:
+    dest: "/usr/local/share/emacs/site-lisp/site-start.el"
+    content: |
+      ;; load *.el and *.elc in /usr/local/share/emacs/site-lisp/site-start.d on startup
+      (mapc
+       'load
+       (delete-dups
+        (mapcar 'file-name-sans-extension
+         (directory-files
+           "/usr/local/share/emacs/site-lisp/site-start.d" t "\\.elc?\\'"))))
+- name: Install emacs home-start.el
+  copy:
+    src: "../etc/emacs/home-start.el"
+    dest: "/usr/local/share/emacs/site-lisp/site-start.d/home-start.el"
+- name: Install emacs home-dark-theme.el
+  copy:
+    src: "../etc/emacs/home-dark-theme.el"
+    dest: "/usr/local/share/emacs/site-lisp/themes/home-dark-theme.el"
+- name: Check for usr-local.el in site-start
+  stat:
+    path: "/usr/share/emacs/site-lisp/site-start.d/usr-local.el"
+  register: emacs_stat
+- name: Install usr-local.el to site-start
+  when: not emacs_stat.stat.exists
+  copy:
+    dest: "/usr/share/emacs/site-lisp/site-start.d/usr-local.el"
+    content: |
+      ;; Load /usr/local
+      (if (file-readable-p "/usr/local/share/emacs/site-lisp/site-start.el")
+          (load  "/usr/local/share/emacs/site-lisp/site-start.el"))
+- name: Install ediff and emacs pager
+  copy:
+    src: "../bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: 0755
+  loop:
+    - emacsclient-pager
+    - ediff

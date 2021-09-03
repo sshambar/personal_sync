@@ -1,0 +1,22 @@
+---
+- name: Install files on deployed hosts
+  hosts: deployed
+  gather_facts: false
+  tasks:
+    - block:
+      - name: Handle profile.d
+        stat:
+          path: "/etc/profile.d"
+        register: play_stat
+      - include_tasks: profile-d.yml
+        when: play_stat.stat.isdir
+      tags: profile
+    - block:
+      - name: Handle site-lisp
+        stat:
+          path: "/usr/share/emacs/site-lisp/site-start.d"
+        register: play_stat
+      - include_tasks: emacs.yml
+        when: play_stat.stat.isdir
+      tags: emacs
+      
