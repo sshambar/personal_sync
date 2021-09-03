@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.6
+# finish-upgrade v1.7
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -17,11 +17,12 @@ echo
 echo "Finishing upgrade...${debug:+DEBUG}"
 echo
 
-# update if opkg lists missing or old
-if ! [ "$(find 2>/dev/null /var/opkg-lists/openwrt_base -mtime -1)" ]; then
-  $debug opkg update
-  touch /var/opkg-lists/openwrt_base
-fi
+_pkgs_update() { # update if opkg lists missing or old
+  if [ -z "$(find 2>/dev/null /var/opkg-lists/openwrt_base -mtime -1)" ]; then
+    $debug opkg update
+    touch /var/opkg-lists/openwrt_base
+  fi
+}
 
 is_installed() { # <name>
   opkg status "$1" | grep -q 'Status:.*installed'
@@ -29,6 +30,7 @@ is_installed() { # <name>
 
 _install_pkg() { # <name>
   is_installed "$1" && return
+  _pkgs_update
   $debug opkg install "$1"
 }
 
@@ -104,17 +106,30 @@ if [ -f /etc/config/mwan3 ]; then
   install_pkgs luci-app-mwan3
 fi
 
+# check for irqbalance
+if [ -f /proc/interrupts ] && grep -q CPU1 /proc/interrupts; then
+  install_pkgs irqbalance
+fi
+
+# check for watchcat
+if [ -f /etc/config/watchcat ]; then
+  install_pkgs luci-app-watchcat
+fi
+
+if [ -f /proc/mtd ] && grep -q kernel2 /proc/mtd; then
+  install_pkgs luci-app-advanced-reboot
+fi
+
 if [ -f /usr/sbin/media-mount ]; then
-  install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup
-  install_pkgs kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac \
-    kmod-crypto-ecb
+  install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup \
+               kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac \
+               kmod-crypto-ecb
 fi
 
 # regular packages
 if [ -n "$full" ]; then
- install_pkgs openssh-client lsof screen haveged htop dmesg
- install_pkgs luci-app-uhttpd luci-ssl
- grep -q kernel2 /proc/mtd && install_pkgs luci-app-advanced-reboot || :
+ install_pkgs openssh-client lsof screen haveged htop dmesg \
+              luci-app-uhttpd luci-ssl luci-app-sqm
 fi
 
 echo
