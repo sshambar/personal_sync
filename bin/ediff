@@ -1,0 +1,47 @@
+#!/bin/sh
+
+EMACS=$(which emacs)
+
+if [ $# -lt 2 ] ; then
+  echo "Usage: "`basename $0`" [ -d ] item1 item2"
+  exit 1
+fi
+
+tar="files"
+if [ "$1" = "-d" ]; then
+  tar="directories"
+  item1="$2"
+  item2="$3"
+else
+  if [ -d "$1" -a -d "$2" ]; then
+    tar="directories"
+  fi
+  item1="$1"
+  item2="$2"
+fi
+
+if [ "$tar" = "files" ]; then
+
+  # Check that files do exist
+  if [ ! -f "$item1" ] ; then
+    printf "File %s not found.\n" "$item1"
+    exit 2
+  fi
+  if [ ! -f "$item2" ] ; then
+    printf "File %s not found.\n" "$item2"
+    exit 2
+  fi
+
+  # Check whether files are identical or not
+  diffdata=`diff "$item1" "$item2"`
+  if [ "_" = "_$diffdata" ] ; then
+    printf "%s and %s are identical.\n" "$item1" "$item2"
+    exit 3
+  fi
+fi
+
+# Run Emacs with ediff-files/directories function
+printf "Comparing %s %s and %s . . .  " "$tar" "$item1" "$item2"
+$EMACS -nw -eval "(ediff-$tar \"$item1\" \"$item2\" $opt)" && echo done.
+
+exit
