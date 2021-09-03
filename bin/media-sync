@@ -1,7 +1,7 @@
 #!/bin/bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# media-sync v1.2 Media Sync
+# media-sync v1.3 Media Sync
 #
 # Author: Scott Shambarger <devel@shambarger.net>
 # Copyright (C) Scott Shambarger
@@ -43,32 +43,42 @@
 # Required commands (config override in parens):
 #   rsync (RSYNC), pkill (PKILL), pgrep (PGREP)
 #
-# Required commands in run as root:
-#   su, realpath
+# Required if run as root: setpriv or su
 #
+
+err() {
+  echo >&2 "$*"
+}
+fatal() {
+  err "$*"
+  exit 1
+}
 
 LOCAL_USER=${LOCAL_USER:-media}
 
 CONFIG="/etc/media-sync.conf"
-[ -r ~/.media-sync.conf ] && CONFIG=~/.media-sync.conf
-[ -r "$CONFIG" ] && eval $(grep "^LOCAL_USER=[a-z]*$" "$CONFIG")
+[[ -r ~/.media-sync.conf ]] && CONFIG=~/.media-sync.conf
+[[ -r ${CONFIG} ]] && {
+  TMPVAL=$(grep "^LOCAL_USER=[a-zA-Z][a-zA-Z0-9]*$" "${CONFIG}" | head -1)
+  TMPVAL=${TMPVAL##*=}; [[ ${TMPVAL} ]] && LOCAL_USER=${TMPVAL}
+}
 
-[ -z "$LOCAL_USER" ] && echo "Invalid LOCAL_USER $LOCAL_USER" && exit 1
+[[ ${LOCAL_USER} ]] || fatal "Invalid LOCAL_USER ${LOCAL_USER}"
 
-if [ $EUID -eq 0 ]; then
-  rpath=`realpath $0`
-  if [[ $(command -v setpriv) ]]; then
-    gid=$(id -rg 2>/dev/null "$LOCAL_USER")
-    [ -z "$gid" ] && echo "Unknown local user $LOCAL_USER" && exit 2
-    exec setpriv --reset-env --no-new-privs --reuid=$LOCAL_USER --regid=$gid --init-groups "$rpath" "$@"
+if [[ ${EUID} == 0 ]]; then
+  # dirname/realpath not available everywhere...
+  src=${BASH_SOURCE[0]} basen=${src##*/} rpath=${src%${basen}}
+  [[ ${rpath} ]] && rpath=$(cd "${rpath}" &>/dev/null && pwd -P)
+  [[ ${rpath} ]] || fatal "Unable to find real script path!"
+  rpath="${rpath}/${basen}"
+  if command &>/dev/null -v setpriv; then
+    gid=$(id -rg 2>/dev/null "${LOCAL_USER}")
+    [[ ${gid} ]] || fatal "Unknown local user ${LOCAL_USER}"
+    exec setpriv --reset-env --no-new-privs --reuid="${LOCAL_USER}" --regid="${gid}" --init-groups "${rpath}" "$@"
   else
-    exec su -s /bin/bash -c "$(printf "%q " "$rpath" "$@")" $LOCAL_USER
+    exec su -s /bin/bash -c "$(printf "%q " "${rpath}" "$@")" "${LOCAL_USER}"
   fi
 fi
-
-CONFIG="/etc/media-sync.conf"
-# (new) local user config overrides global
-[ -r ~/.media-sync.conf ] && CONFIG=~/.media-sync.conf
 
 # some reasonable defaults
 LOG=~/media-sync.log
@@ -95,148 +105,121 @@ PGREP=$(command -v pgrep)
 RSYNC=$(command -v rsync)
 
 # local all overrides
-[ -r "$CONFIG" ] && . "$CONFIG"
+# shellcheck disable=SC1090
+[ -r "${CONFIG}" ] && . "${CONFIG}"
 
 log() {
   # date similar to rsync log date
-  if [ -n "$LOG" ]; then
-     echo "`date +%Y/%m/%d\ %H:%M:%S`: $@" >> "$LOG"
+  if [[ ${LOG} ]]; then
+     echo "$(date "+%Y/%m/%d %H:%M:%S"): $*" >> "${LOG}"
   else
-     echo "`date +%Y/%m/%d\ %H:%M:%S`: $@"
+     echo "$(date "+%Y/%m/%d %H:%M:%S"): $*"
   fi
   return 0
 }
 
-usage () {
-	echo "Usage: $0 [<options>]"
-	echo "Receive files into local directory $LOCAL_DIR"
-	echo "  from remote location $REMOTE as local user $LOCAL_USER"
-	echo "<options> can be one or more of:"
-	echo "  status - display if sync is running"
-	echo "  test - only show what will be synced"
-	echo "  cancel - cancel any running sync"
-	echo "  delete - perform deletes (local, and if send, remote)"
-	echo "  verbose - show rsync debug info"
-	echo "  progress - show progress during transfers"
-	echo "  alt - use alternate remote: $ALT_REMOTE"
-	echo "  send - send files to remote rather that receiving"
-	echo "  fast - disable bandwidth limits"
-	echo "     (current: ${RECV_SPEED}kBps receive, ${SEND_SPEED}kBps send)"
+loge() {
+  log "$*"; exit 2
 }
 
-rsync_args=
-cancel=
-send=
-test=
-args="$*"
-outfmt="%t %i %n"
+[[ -x ${PKILL} ]] || loge "Unable to find pkill (set PKILL config)"
+[[ -x ${PGREP} ]] || loge "Unable to find pgrep (set PGREP config)"
+[[ -x ${RSYNC} ]] || loge "Unable to find rsync (set RSYNC config)"
+
+usage () {
+  echo "Usage: ${0##*/} [<options>]"
+  echo "Receive files into local directory ${LOCAL_DIR}"
+  echo "  from remote location ${REMOTE} as local user ${LOCAL_USER}"
+  echo "<options> can be one or more of:"
+  echo "  status - display if sync is running"
+  echo "  test - only show what will be synced"
+  echo "  cancel - cancel any running sync"
+  echo "  delete - perform deletes (local, and if send, remote)"
+  echo "  verbose - show rsync debug info"
+  echo "  progress - show progress during transfers"
+  echo "  alt - use alternate remote: $ALT_REMOTE"
+  echo "  send - send files to remote rather that receiving"
+  echo "  fast - disable bandwidth limits"
+  echo "     (current: ${RECV_SPEED}kBps receive, ${SEND_SPEED}kBps send)"
+}
+
+cancel='' send='' test='' args="$*"
+
+rsync_args=("-rltuHO")
 
 for f in "$@"; do
   case $f in
-    status)
-      cancel=1
-      ;&
-    test)
-      test=1
-      LOG=
-      rsync_args="-n $rsync_args"
+    status|test)
+      test=1 LOG='' rsync_args+=("-n")
+      [[ $f == status ]] && cancel=1
       ;;
-    delete)
-      rsync_args="--delete-during $rsync_args"
-      ;;
-    verbose)
-      LOG=
-      ;;
-    progress)
-      LOG=
-      rsync_args="--progress --stats $rsync_args"
-      ;;
-    alt)
-      REMOTE=$ALT_REMOTE
-      ;;
-    fast)
-      RECV_SPEED=
-      SEND_SPEED=
-      ;;
-    send)
-      send=1
-      rsync_args="-u $rsync_args"
-      ;;
-    cancel)
-      cancel=1
-      ;;
-    help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $f"
-      usage
-      exit 1
-      ;;
+    delete) rsync_args+=("--delete-during") ;;
+    verbose) LOG='' ;;
+    progress) LOG='' rsync_args+=("--progress" "--stats") ;;
+    alt) REMOTE=${ALT_REMOTE} ;;
+    fast) RECV_SPEED='' SEND_SPEED='' ;;
+    send) send=1 rsync_args+=("-u") ;;
+    cancel) cancel=1 ;;
+    help) usage; exit 0 ;;
+    *) err "Unknown option: '${f}'"; usage; exit 1 ;;
   esac
   shift
 done
 
-[ ! -x "$PKILL" ] && log "Unable to find pkill (set PKILL config)" && exit 2
-[ ! -x "$PGREP" ] && log "Unable to find pgrep (set PGREP config)" && exit 2
-[ ! -x "$RSYNC" ] && log "Unable to find rsync (set RSYNC config)" && exit 2
+[[ ${USER} != "${LOCAL_USER}" ]] && {
+  # cancel+test = status, anyone can run
+  [[ ${cancel} && ${test} ]] || fatal "Run as user ${LOCAL_USER} or root"
+}
 
-if [ "$USER" != "$LOCAL_USER" ]; then
-  [ -n "$cancel" -a -n "$test" ] || {
-    echo "Run as user $LOCAL_USER or root" && exit 1
-  }
-fi
-
-if [ -n "$cancel" ]; then
-  if [ -n "$test" ]; then
-    "$PGREP" -u $LOCAL_USER rsync >/dev/null
-  else
-    "$PKILL" -USR1 -u $LOCAL_USER rsync
+if [[ ${cancel} ]]; then
+  if [[ ${test} ]]; then
+    # get status
+    "${PGREP}" >/dev/null -u "${LOCAL_USER}" rsync
+    rc=$? status=''; [[ ${rc} != 0 ]] && status="not "
+    echo "media-sync is ${status}running"
+    exit ${rc}
   fi
-  rc=$?
-  [ $rc -eq 0 ] && status= || status="not "
-  [ -n "$test" ] && echo "media-sync is ${status}running" && exit $rc
-  exit 0
+  # graceful kill
+  "${PKILL}" -USR1 -u "${LOCAL_USER}" rsync
+  exit
 fi
 
 # add common args
-rsync_args="-rltuHO $rsync_args $RSYNC_FILTERS --safe-links --chmod=Da=rwX,Fa=rw --timeout=$TIMEOUT"
+for f in ${RSYNC_FILTERS}; do rsync_args+=("${f}"); done
+rsync_args+=("--safe-links" "--chmod=Da=rwX,Fa=rw" "--timeout=${TIMEOUT:-300}")
+rsync_args+=("--out-format=%t %i %n")
 
 log "start: $args"
 
-"$PKILL" -0 -u $LOCAL_USER rsync
-if [ $? -eq 0 ]; then
+"$PKILL" -0 -u "${LOCAL_USER}" rsync && {
   log "still running..."
   exit 0
-fi
+}
 
-if [ ! -d "$LOCAL_DIR" ]; then
-  log "Unable to find local directory: '$LOCAL_DIR'"
-  exit 2
-fi
+[[ -d ${LOCAL_DIR} ]] || {
+  loge "Unable to find local directory: '${LOCAL_DIR}'"; }
 
-if [ -n "$send" ]; then
+if [[ ${send} ]]; then
 
-  [ -n "$SEND_SPEED" ] && rsync_args="$rsync_args --bwlimit=$SEND_SPEED"
+  [[ ${SEND_SPEED} ]] && rsync_args+=("--bwlimit=${SEND_SPEED}")
 
   # sending to remote
-  log "send: $rsync_args $LOCAL_DIR $REMOTE"
-  if [ -n "$LOG" ]; then
-    "$RSYNC" $rsync_args --out-format="$outfmt" "$LOCAL_DIR" "$REMOTE" >> "$LOG" 2>&1 &
+  log "send: ${rsync_args[*]} ${LOCAL_DIR} ${REMOTE}"
+  if [[ ${LOG} ]]; then
+    "${RSYNC}" "${rsync_args[@]}" "${LOCAL_DIR}" "${REMOTE}" >> "${LOG}" 2>&1 &
   else
-    "$RSYNC" $rsync_args --out-format="$outfmt" "$LOCAL_DIR" "$REMOTE" &
+    "${RSYNC}" "${rsync_args[@]}" "${LOCAL_DIR}" "${REMOTE}" &
   fi
 else
 
-  [ -n "$RECV_SPEED" ] && rsync_args="$rsync_args --bwlimit=$RECV_SPEED"
+  [[ ${RECV_SPEED} ]] && rsync_args+=("--bwlimit=${RECV_SPEED}")
 
   # receiving
-  log "recv: $rsync_args $REMOTE $LOCAL_DIR"
+  log "recv: ${rsync_args[*]} ${REMOTE} ${LOCAL_DIR}"
   if [ -n "$LOG" ]; then
-    "$RSYNC" $rsync_args --out-format="$outfmt" "$REMOTE" "$LOCAL_DIR" >> "$LOG" 2>&1 &
+    "${RSYNC}" "${rsync_args[@]}" "${REMOTE}" "${LOCAL_DIR}" >> "${LOG}" 2>&1 &
   else
-    "$RSYNC" $rsync_args --out-format="$outfmt" "$REMOTE" "$LOCAL_DIR" &
+    "${RSYNC}" "${rsync_args[@]}" "${REMOTE}" "${LOCAL_DIR}" &
   fi
 fi
 
@@ -251,7 +234,7 @@ wait % 2>/dev/null
 rc=$?
 trap - HUP INT PIPE TERM
 wait % 2>/dev/null
-[ $rc -ne 0 ] && log "error: $rc" && exit $rc
+[[ ${rc} != 0 ]] && loge "error: ${rc}"
 
 log "finish"
 exit 0
