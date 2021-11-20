@@ -12,6 +12,7 @@ function scr() {
 
 # nice shortcuts
 alias h=history 2>/dev/null
+alias sha256sum='openssl dgst -sha256'
 
 # colorize man pages
 export LESS_TERMCAP_mb=$'\E[1;32m'     # begin bold
