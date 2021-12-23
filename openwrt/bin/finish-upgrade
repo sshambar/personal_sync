@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.7
+# finish-upgrade v1.8
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -126,10 +126,25 @@ if [ -f /usr/sbin/media-mount ]; then
                kmod-crypto-ecb
 fi
 
+if [ -f /etc/screenrc ]; then
+  install_pkgs screen
+fi
+
+if [ -f /etc/ssh/ssh_config ]; then
+  install_pkgs openssh-client
+fi
+
+if [ -f /etc/profile.d/console.sh ]; then
+  # could crawl /sys/bus/usb for idVendor=067b idProduct=2303, or just
+  # use most likely driver
+  install_pkgs kmod-usb-serial-pl2303
+fi
+
 # regular packages
 if [ -n "$full" ]; then
- install_pkgs openssh-client lsof screen haveged htop dmesg \
-              luci-app-uhttpd luci-ssl luci-app-sqm
+  # catchall if not already installed
+  install_pkgs openssh-client openssh-server shadow-su lsof screen \
+               haveged htop dmesg luci-app-uhttpd luci-ssl luci-app-sqm
 fi
 
 echo
