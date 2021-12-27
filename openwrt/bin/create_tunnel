@@ -1,0 +1,75 @@
+#!/bin/sh
+
+# create_tunnel - v1.0
+#
+# Creates/maintains ssh tunnel on basic openwrt install
+#
+# Config in /etc/create_tunnel.conf (must have SSH_ARGS set)
+#
+# Create a basic start script in /etc/init.d/create_tunnel (for boot)
+# and an hourly cron to start it in case it's not enabled
+#
+# Command runs in the foreground, but will exit immediately if it
+# finds another create_tunnel running...
+
+log() {
+  logger -t create_tunnel -s "$*"
+}
+
+SSH=/usr/bin/ssh
+BASE_ARGS="-N -T -o ExitOnForwardFailure=yes"
+INIT_DELAY=30
+RETRY_DELAY=60
+ERRLOG=/var/log/create_tunnel.log
+# must exist to enable
+SSH_ARGS=''
+
+# procd doesnt set HOME correctly
+[ $(id -u) == 0 ] && HOME=/root
+
+# ensure we have config
+[ -f /etc/create_tunnel.conf ] || exit 0
+. /etc/create_tunnel.conf
+[ -z "$SSH_ARGS" ] && exit 0
+
+pid=$(pgrep -o -x -f -- "/bin/sh $0")
+[ -z "$pid" ] && log "pgrep doesn't find current task" && exit 0
+# check if already running
+[ $pid != $$ ] && exit 0
+
+PID=''
+cancel() {
+  trap - SIGTERM SIGINT
+  if [ -n "$PID" ]; then
+    log "Shutting down tunnel..."
+    kill $PID
+  fi
+  exit 0
+}
+
+trap cancel SIGTERM SIGINT
+
+# possible bootup, let network configure
+[ -n "$INIT_DELAY" ] && sleep $INIT_DELAY
+
+while true; do
+  log "Creating tunnel..."
+  if [ -n "$ERRLOG" ]; then
+    $SSH $BASE_ARGS $SSH_ARGS > "$ERRLOG" 2>&1 &
+  else
+    $SSH $BASE_ARGS $SSH_ARGS &
+  fi
+  PID=$!
+  wait $PID
+  rc=$?
+  PID=''
+  if [ -n "$ERRLOG" ] && [ $rc != 0 ]; then
+    out=$(tail -3 "$ERRLOG")
+    log "Tunnel failed ($rc): $out"
+  else
+    log "Tunnel failed ($rc)"
+  fi
+  # try again....
+  [ -n "$RETRY_DELAY" ] && sleep $RETRY_DELAY
+done
+
