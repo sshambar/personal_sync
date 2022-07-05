@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.8
+# finish-upgrade v1.9
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
@@ -17,11 +17,24 @@ echo
 echo "Finishing upgrade...${debug:+DEBUG}"
 echo
 
+PKG_CORE=
 _pkgs_update() { # update if opkg lists missing or old
-  if [ -z "$(find 2>/dev/null /var/opkg-lists/openwrt_base -mtime -1)" ]; then
+  [[ $PKG_CORE ]] && return
+  [[ -f /etc/opkg/distfeeds.conf ]] || {
+    echo "Missing opkg distfeeds.conf"; exit 1; }
+
+  PKG_CORE=$(head -1 /etc/opkg/distfeeds.conf | awk '{ print $2 }')
+
+  if [[ -z $(find 2>/dev/null "/var/opkg-lists/$PKG_CORE" -mtime -1) ]]; then
+    $debug rm -f /var/opkg-lists/$PKG_CORE
     $debug opkg update
-    touch /var/opkg-lists/openwrt_base
+    if [[ -f /var/opkg-lists/$PKG_CORE ]]; then
+      touch /var/opkg-lists/$PKG_CORE
+    else
+      PKG_CORE=
+    fi
   fi
+  [[ $PKG_CORE ]]
 }
 
 is_installed() { # <name>
@@ -44,7 +57,7 @@ install_pkgs() { # <name>...
 _disable_pkg() { # <name>
   is_installed "$1" || return 0
   local init_file=$(opkg files "$1" | grep "^/etc/init.d/" | head -1)
-  [ -z "$init_file" ] && echo "Package $1 has no init.d file" && return 1
+  [[ -z $init_file ]] && echo "Package $1 has no init.d file" && return 1
   [ $("$init_file" status) == running ] && $debug "$init_file" stop
   local app=${init_file##*/}
   [ -h /etc/rc.d/S*$app ] || return 0
@@ -65,24 +78,28 @@ disable_pkgs dnscrypt-proxy2 samba4-server wsdd2
 install_pkgs diffutils bash
 
 ADMIN_USER=
-[ -r /etc/admin.user ] && ADMIN_USER=$(cat /etc/admin.user)
+[[ -r /etc/admin.user ]] && ADMIN_USER=$(cat /etc/admin.user)
 
-if [ -n "$ADMIN_USER" -a -d "/$ADMIN_USER" ]; then
-  if [ -G "/$ADMIN_USER" ]; then
-    echo "fixing /$ADMIN_USER"
-    $debug chgrp -R "$ADMIN_USER" "/$ADMIN_USER"
+if [[ $ADMIN_USER ]] && grep -q ^${ADMIN_USER}: /etc/passwd; then
+  ADMIN_HOME=$(grep ^${ADMIN_USER}: /etc/passwd | awk -F: '{ print $6 }')
+  if [[ $ADMIN_HOME ]]; then
+    [[ -d $ADMIN_HOME ]] || $debug mkdir -p "$ADMIN_HOME"
+    if [[ -G $ADMIN_HOME ]]; then
+      echo "fixing $ADMIN_HOME"
+      $debug chgrp -R "$ADMIN_USER" "$ADMIN_HOME"
+    fi
+
+    install_pkgs shadow-su
   fi
-
-  install_pkgs shadow-su
 fi
 
-if [ -s /etc/ssh/sshd_config ]; then
+if [[ -s /etc/ssh/sshd_config ]]; then
   # install sshd only if we use it
   install_pkgs openssh-server
 fi
 
 # check for homedns
-if [ -f /etc/hotplug.d/iface/90-homedns ]; then
+if [[ -f /etc/hotplug.d/iface/90-homedns ]]; then
   install_pkgs bind-client bind-dig curl ca-bundle
 fi
 
@@ -93,58 +110,75 @@ if ! is_installed less; then
     { ln -s ../bin/busybox /usr/bin/less; exit 1; }
 fi
 
-# non-basic install
-install_pkgs procps-ng-ps tcpdump-mini iperf3
+# optional installs
+install_pkgs procps-ng-ps || install_pkgs procps-ps || :
+if ! is_installed tcpdump; then
+  install_pkgs tcpdump-mini || :
+fi
+install_pkgs iperf3 || :
 
 # check for sqm
-if [ -f /etc/config/sqm ]; then
+if [[ -f /etc/config/sqm ]]; then
   install_pkgs luci-app-sqm
 fi
 
 # check for mwan3
-if [ -f /etc/config/mwan3 ]; then
+if [[ -f /etc/config/mwan3 ]]; then
   install_pkgs luci-app-mwan3
 fi
 
 # check for irqbalance
-if [ -f /proc/interrupts ] && grep -q CPU1 /proc/interrupts; then
+if [[ -f /etc/config/irqbalance && -f /proc/interrupts ]] &&
+     grep -q CPU1 /proc/interrupts; then
   install_pkgs irqbalance
 fi
 
 # check for watchcat
-if [ -f /etc/config/watchcat ]; then
+if [[ -f /etc/config/watchcat ]]; then
   install_pkgs luci-app-watchcat
 fi
 
-if [ -f /proc/mtd ] && grep -q kernel2 /proc/mtd; then
+if [[ -f /proc/mtd ]] && grep -q kernel2 /proc/mtd; then
   install_pkgs luci-app-advanced-reboot
 fi
 
-if [ -f /usr/sbin/media-mount ]; then
+if [[ -f /usr/sbin/media-mount ]]; then
   install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup \
                kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac \
                kmod-crypto-ecb
 fi
 
-if [ -f /etc/screenrc ]; then
+if [[ -f /etc/screenrc ]]; then
   install_pkgs screen
 fi
 
-if [ -f /etc/ssh/ssh_config ]; then
+if [[ -f /etc/ssh/ssh_config ]]; then
   install_pkgs openssh-client
 fi
 
-if [ -f /etc/profile.d/console.sh ]; then
+if [[ -f /etc/profile.d/console.sh ]]; then
   # could crawl /sys/bus/usb for idVendor=067b idProduct=2303, or just
   # use most likely driver
   install_pkgs kmod-usb-serial-pl2303
 fi
 
 # regular packages
-if [ -n "$full" ]; then
+if [[ $full ]]; then
   # catchall if not already installed
-  install_pkgs openssh-client openssh-server shadow-su lsof screen \
-               haveged htop dmesg luci-app-uhttpd luci-ssl luci-app-sqm
+  install_pkgs openssh-client || :
+  install_pkgs openssh-server || :
+  install_pkgs shadow-su || :
+  install_pkgs lsof || :
+  install_pkgs screen || :
+  install_pkgs haveged || :
+  install_pkgs htop || :
+  install_pkgs dmesg || :
+  install_pkgs luci-app-uhttpd || :
+  install_pkgs luci-ssl || :
+  install_pkgs luci-app-sqm || :
+  if [[ -f /proc/interrupts ]] && grep -q CPU1 /proc/interrupts; then
+    install_pkgs irqbalance
+  fi
 fi
 
 echo
