@@ -40,21 +40,14 @@ add_root_path() {
   [ "${j%/}" = "$j" ] && j="$j/"
   add_path PATH "${j}bin" "$2"
   # skip system library paths
-  [ "$j" = / -o "$j" = /usr/ ] || add_path LD_LIBRARY_PATH "${j}lib" "$2"
-  add_path MANPATH "${j}share/man" "$2"
-  add_path INFOPATH "${j}share/info" "$2"
+  [[ $LD_LIBRARY_PATH && $j != / && $j != /usr/ ]] &&
+     add_path LD_LIBRARY_PATH "${j}lib" "$2"
+  [[ $MANPATH ]] && add_path MANPATH "${j}share/man" "$2"
+  [[ $INFOPATH ]] && add_path INFOPATH "${j}share/info" "$2"
 }
-
-# we're setting these, export them
-export PATH LD_LIBRARY_PATH MANPATH INFOPATH
 
 # basic paths
 for i in /usr/local /usr /; do add_root_path $i; done
-
-# cleanup
-[ -z "$LD_LIBRARY_PATH" ] && unset LD_LIBRARY_PATH
-[ -z "$MANPATH" ] && unset MANPATH
-[ -z "$INFOPATH" ] && unset INFOPATH
 
 # Local Variables:
 # sh-basic-offset: 2
