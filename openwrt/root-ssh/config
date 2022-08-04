@@ -1,0 +1,6 @@
+# only used if openssh-client installed
+Host server-host
+  IdentitiesOnly yes
+  # ident file diff format than dropbear (use dropbearconvert)
+  IdentityFile /root/.ssh/id_dropbear-openssh
+  ServerAliveInterval 60
