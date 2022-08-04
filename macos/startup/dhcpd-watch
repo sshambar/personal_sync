@@ -1,10 +1,10 @@
 #!/bin/bash
 # -*- mode: shell-script; fill-column: 78 -*-
 #
-# dhcpd-watch v0.7 Spawn dhcpd on VirtualBox network (MacOS host)
+# dhcpd-watch v1.0 Spawn dhcpd on VirtualBox network (MacOS host)
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright (C) 2020 Scott Shambarger
+# Copyright (C) 2020-22 Scott Shambarger
 #
 # Script to load VBox drivers, configure network interface, and spawn dhcpd
 # Watches dhcpd for looping errors and kills it (if interface is removed!)
@@ -31,16 +31,20 @@
 # Static route should probably be loaded based on the <interface>
 # static ip6 routes (optional) <subnet>/<prefix-len> <gateway>...
 IP6_ROUTES="fddd:1234:1234:ff::/64 fe80::a00:27ff:fe02:7e08"
+IP6_ADDRS="fddd:1234:8888::1/48"
 
 # dhcpd daemon
 DHCPD="/usr/local/sbin/dhcpd"
+DHCPD_PID="/usr/local/var/dhcpd/dhcpd.pid"
 LOGFILE="/usr/local/var/log/dhcpd.log"
 
 # rtadvd
 RTADVD="/usr/sbin/rtadvd"
+RTADVD_PID="/var/run/rtadvd.pid"
 
 # dhcpd6 config (optional)
 DHCP6CFG="/usr/local/etc/dhcpd6.conf"
+DHCPD6_PID="/usr/local/var/dhcpd/dhcpd6.pid"
 LOGFILE6="/usr/local/var/log/dhcpd6.log"
 
 # VBpx driver load script
@@ -56,100 +60,145 @@ msg() { # <msg>
   echo >&2 "$*"
 }
 
-kill_proc() { # <cmd-to-kill>
-  local pid cmd=$*
-  [ -n "$cmd" ] || return 0
-  for pid in $(pgrep -f "$cmd"); do
-    msg "Killing existing $cmd..."
-    kill 2>/dev/null $pid
-  done
-}
-
-kill_jobs() {
-  local pid
-  # list our jobs that are still around...
-  for pid in $(jobs -rp); do
-    set -- $(ps -p $pid -o command=cmd | tail -1)
-    # skip dead proc
-    [ "$1" = cmd ] && continue
-    msg "Killing $1 $2..."
-  done
-  # kill all child procs
-  pkill -P $$
-}
-
-check_bg() { # <name>
-  # 0.2 sec should be enough for the bg command to fail
-  sleep 0.2
-  kill -0 $! || err "Failed to spawn $*"
-}
-
-add_ip6_routes() {
-  [ -z "$IP6_ROUTES" ] && return
-  # each route is <subnet>/<prefix> <gateway>
-  set -- $IP6_ROUTES
-  while [ -n "$1" -a -n "$2" ]; do
-    SUBNET=$1 GW=$2
-    shift 2
-    [ -n "$(route -n get -inet6 ${SUBNET%/*}1 | grep $GW)" ] || {
-      route add -inet6 -net -ifscope $NET $SUBNET $GW >&2
-    }
-  done
-}
-
-remove_ip6_routes() {
-  [ -z "$IP6_ROUTES" ] && return
-  # each route is <subnet>/<prefix> <gateway>
-  set -- $IP6_ROUTES
-  while [ -n "$1" -a -n "$2" ]; do
-    SUBNET=$1 GW=$2
-    shift 2
-    [ -n "$(route -n get -inet6 ${SUBNET%/*}1 | grep $GW)" ] && {
-      route delete -inet6 -net -ifscope $NET $SUBNET $GW >&2
-    }
-  done
-}
-
-enable_ip6_forwarding() {
-  # ensure forwarding enabled
-  [ "$(sysctl -n net.inet6.ip6.forwarding)" -eq 1 ] && return
-  msg "Enabling ip6 forwarding..."
-  sysctl >/dev/null -w net.inet6.ip6.forwarding=1
-}
-
-disable_ip6_forwarding() {
-  [ "$(sysctl -n net.inet6.ip6.forwarding)" -eq 0 ] && return
-  msg "Disabling ip6 forwarding..."
-  sysctl >/dev/null -w net.inet6.ip6.forwarding=0
-}
-
-IN_CLEANUP=
-cleanup() {
-  # ignore SIGTERM while killing jobs
-  trap "" SIGTERM
-  IN_CLEANUP=1
-  kill_jobs
-  remove_ip6_routes
-  disable_ip6_forwarding
-}
-
-err() { # <err msg>
+fail() { # <fail msg>
   msg "$*"
   exit 4
 }
 
-shutdown() {
+is_running() { # <pidfile>
+  [[ -e "$1" ]] || return
+  pgrep -q -F "$1" || return
+}
+
+kill_proc() { # <pidfile> <name>
+  local pid pf=${1-} name=${2-}
+  [[ -e $pf ]] || return 0
+  pid=$(pgrep -F "$pf") || pid=''
+  [[ $pid ]] && {
+    msg "Killing existing ${name} ($pid)..."
+    kill "$pid"
+  }
+  rm -f "$pf"
+}
+
+watch_daemon() { # <pidfile> <name>
+  while is_running "$1"; do
+    sleep 5
+  done
+  fail "Daemon $2 died!"
+}
+
+spawn_daemon() { # <pidfile> <logfile> <cmd> <args>...
+  local name pf=${1-} lf=${2-}; shift 2
+
+  [[ $pf && $1 ]] || fail "Usage: spawn_daemon <pid>/<cmd> required!"
+
+  name="${*:1:2}"
+
+  # always restart, we track children of this script
+  kill_proc "$pf" "$name"
+
+  rm -f "$pf"
+  msg "Spawning ${name}..."
+  if [[ $lf ]]; then
+    "$@" &>"$lf" &
+  else
+    "$@" &
+  fi
+  # 2 secs should be enough for the bg command to fail
+  local i=10
+  while ((--i > 0)); do
+    [[ -f $pf ]] && break
+    sleep 0.2
+  done
+  (( i > 0 )) || fail "$name failed to create pid file"
+
+  sleep 0.5 # give process time to fail...
+  is_running "$pf" || fail "Failed to spawn $name"
+  msg "$name started as pid $(< "$pf")"
+
+  return 0
+}
+
+add_ip6_routes() {
+  [[ $IP6_ROUTES ]] || return 0
+  # each route is <subnet>/<prefix> <gateway>
+  set -- $IP6_ROUTES
+  while [[ $1 && $2 ]]; do
+    SUBNET=$1 GW=$2; shift 2
+    [[ $(route -n get -inet6 "${SUBNET%/*}") =~ "$GW" ]] && continue
+    msg "Adding static route $SUBNET => $GW"
+    route add -inet6 -net -ifscope "$NET" "$SUBNET" "$GW" >&2
+  done
+  return 0
+}
+
+remove_ip6_routes() {
+  [[ $IP6_ROUTES ]] || return 0
+  # each route is <subnet>/<prefix> <gateway>
+  set -- $IP6_ROUTES
+  while [[ $1 && $2 ]]; do
+    SUBNET=$1 GW=$2; shift 2
+    [[ $(route -n get -inet6 "${SUBNET%/*}") =~ "$GW" ]] && continue
+    msg "Removing static route $SUBNET => $GW"
+    route delete -inet6 -net -ifscope "$NET" "$SUBNET" "$GW" >&2
+  done
+}
+
+add_ip6_addrs() {
+  local a6 item addrs=()
+  while read -r item || [[ $item ]]; do
+    set -- $item
+    [[ $1 == inet6 ]] && addrs+=("$2/$4")
+  done <<< "$(ifconfig "$NET")"
+  for a6 in $IP6_ADDRS; do
+    for item in ${addrs[*]+"${addrs[@]}"}; do
+      [[ $item == "$a6" ]] && continue 2
+    done
+    msg "Adding static address $a6"
+    ifconfig "$NET" inet6 "${a6%/*}" prefixlen "${a6#*/}" alias
+  done
+  return 0
+}
+
+enable_ip6_forwarding() {
+  # ensure forwarding enabled
+  [[ $(sysctl -n net.inet6.ip6.forwarding) == 1 ]] && return
+  msg "Enabling ip6 forwarding:"
+  sysctl -w net.inet6.ip6.forwarding=1
+}
+
+disable_ip6_forwarding() {
+  [[ $(sysctl -n net.inet6.ip6.forwarding) == 0 ]] && return
+  msg "Disabling ip6 forwarding:"
+  sysctl -w net.inet6.ip6.forwarding=0
+}
+
+IN_EXIT=
+trap_exit() {
+  # ignore SIGTERM while killing jobs
+  trap "" SIGTERM SIGCHLD
+  IN_EXIT=1 # bash3 workaround
+  kill_proc "$DHCPD6_PID" "$DHCPD" -6
+  kill_proc "$RTADVD_PID" "$RTADVD" "$NET"
+  kill_proc "$DHCPD_PID" "$DHCPD" -4
+  # kill all non-daemon child procs
+  pkill -P $$
+  remove_ip6_routes
+  disable_ip6_forwarding
+}
+
+trap_term() {
   msg "Received signal..."
   exit 0
 }
 
-dead_child() {
-  # resetting SIGCHLD doesn't seem to work in bash v3
+trap_child() {
   trap "" SIGCHLD
   # surpress feedback
   set +o monitor
-  # if in cleanup, skip
-  [ -n "$IN_CLEANUP" ] && return
+  # resetting SIGCHLD doesn't seem to work in bash v3
+  [[ $IN_EXIT ]] && return
   # if tail died, let wait handle it
   kill -0 %tail 2>/dev/null || return 0
   # dead bg proc
@@ -157,24 +206,25 @@ dead_child() {
   exit 3
 }
 
-[ $EUID -eq 0 ] || err "Must be run as root"
+[ $EUID -eq 0 ] || fail "Must be run as root"
 
 [ -n "$1" ] || {
   msg "Usage: dhcpd-watch <interface>"
   exit 1
 }
 NET=$1
+DHCPD_PID="${DHCPD_PID/@ID@/$1}"
 
 # cleanup on exit
-trap cleanup EXIT
+trap trap_exit EXIT
 
 # catch signals
-trap shutdown SIGTERM SIGINT
+trap trap_term SIGTERM SIGINT
 
 # check important config
-[ -x "$VBOXM" ] || err "$VBOXM missing/noexec"
-[ -x "$DHCPD" ] || err "$DHCPD missing/noexec"
-[ -n "$LOGFILE" ] || err "dhcpd logfile not set"
+[ -x "$VBOXM" ] || fail "$VBOXM missing/noexec"
+[ -x "$DHCPD" ] || fail "$DHCPD missing/noexec"
+[ -n "$LOGFILE" ] || fail "dhcpd logfile not set"
 
 #
 # Now lets check the drivers
@@ -183,7 +233,7 @@ trap shutdown SIGTERM SIGINT
 [ -c /dev/vboxdrv ] || {
 
   # we need to load the vbox drivers
-  [ -x "$VBOXDEV" ] || err "$VBOXDEV missing/noexec"
+  [ -x "$VBOXDEV" ] || fail "$VBOXDEV missing/noexec"
 
   "$VBOXDEV" start || exit 5
 }
@@ -193,16 +243,16 @@ trap shutdown SIGTERM SIGINT
 #
 
 get_config() { # <key>
-  [ -f "$VBOXCFG" ] || err "$VBOXCFG missing"
+  [ -f "$VBOXCFG" ] || fail "$VBOXCFG missing"
   grep "<ExtraDataItem.*name=\"HostOnly/$NET/$1\"" "$VBOXCFG" | \
     sed -E 's/.*value="([^"]*)".*/\1/'
 }
 
 # check config
 IP=$(get_config IPAddress)
-[ -n "$IP" ] || err "Network $NET not in virtualbox hostonlyifs"
+[ -n "$IP" ] || fail "Network $NET not in virtualbox hostonlyifs"
 IPMASK=$(get_config IPNetMask)
-[ -n "$IPMASK" ] || err "Network config $NET missing NetMask"
+[ -n "$IPMASK" ] || fail "Network config $NET missing NetMask"
 
 # optional
 IP6=$(get_config IPV6Address)
@@ -212,7 +262,7 @@ ifconfig $NET &>/dev/null || {
   # create the network interface
   "$VBOXM" list hostonlyifs >/dev/null || exit 6
 
-  ifconfig $NET &>/dev/null || err "Failed to create $NET"
+  ifconfig $NET &>/dev/null || fail "Failed to create $NET"
 }
 
 ifconfig $NET | grep -q "inet $IP" || {
@@ -222,7 +272,13 @@ ifconfig $NET | grep -q "inet $IP" || {
 # ip6 addresses
 [ -n "$IP6" -a -n "$IP6MASK" ] && {
   ifconfig $NET | grep -q "inet6 $IP6" || {
-    "$VBOXM" hostonlyif ipconfig $NET --ipv6 $IP6 --netmasklengthv6 $IP6MASK >&2 || exit 8
+    # "$VBOXM" hostonlyif ipconfig $NET --ipv6 $IP6 --netmasklengthv6 $IP6MASK >&2 || {
+    # stupid VBoxManage is broken for ipv6 host-only
+    ipconfig set $NET MANUAL-V6 $IP6 $IP6MASK || {
+      msg "Unable to set ip6 address on $NET"
+      # disable ipv6
+      IP6='' IP6MASK=''
+    }
   }
 }
 
@@ -230,15 +286,9 @@ ifconfig $NET | grep -q "inet $IP" || {
 # Now start dhcpd
 #
 
-# kill conflicting dhcpd
-kill_proc "$DHCPD -4 -d $NET"
+spawn_daemon "$DHCPD_PID" "$LOGFILE" "$DHCPD" -4 -d "$NET"
 
-# start dhcpd with fresh logfile
-msg "Spawning dhcpd v4"
-"$DHCPD" -4 -d $NET 2>"$LOGFILE" &
-check_bg "$DHCPD -4"
-
-[ -n "$IP6" -a -n "$IP6MASK" ] && {
+[[ $IP6 && $IP6MASK ]] && {
 
   #
   # ip6 config
@@ -246,39 +296,32 @@ check_bg "$DHCPD -4"
 
   enable_ip6_forwarding
 
+  add_ip6_addrs
+
   add_ip6_routes
 
   #
   # start radvtd
   #
 
-  # kill conflicting rtadvd
-  kill_proc "$RTADVD -f $NET"
+  spawn_daemon "$RTADVD_PID" "" "$RTADVD" "$NET"
 
-  msg "Spawning v6 Route Advertisement daemon..."
-  "$RTADVD" -f $NET &
-  check_bg "$RTADVD"
+  # rtadvd leaves process group, need to watch by pidfile
+  watch_daemon "$RTADVD_PID" "$RTADVD" &
 
-  [ -f "$DHCP6CFG" ] && {
+  [[ -f $DHCP6CFG && $LOGFILE6 ]] && {
 
     #
     # start dhcpd v6
     #
-    [ -n "$LOGFILE6" ] || err "dhcpd v6 logfile not set"
-
-    # kill conflicting dhcpd v6
-    kill_proc "$DHCPD -6 -d -cf $DHCP6CFG $NET"
-
-    # start dhcpd v6 with fresh logfile
-    msg "Spawning dhcpd v6"
-    "$DHCPD" -6 -d -cf "$DHCP6CFG" $NET 2>"$LOGFILE6" &
-    check_bg "$DHCPD -6"
+    spawn_daemon "$DHCPD6_PID" "$LOGFILE6" \
+                 "$DHCPD" -6 -d -cf "$DHCP6CFG" "$NET"
   }
 }
 
 # now monitor all background processes for death
 set -o monitor
-trap dead_child SIGCHLD
+trap trap_child SIGCHLD
 
 # just watch dhcp v4 logfile for errors
 msg "Watching dhcpd for errors..."
