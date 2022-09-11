@@ -1,16 +1,18 @@
-# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
+# -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
+# vim:set ft=sh et sw=2 ts=2:
+#
 # server.sh - server specific defines
 
 # Skip all for noninteractive shells.
-[ ! -t 0 ] && return
+[[ -t 0 ]] || return 0
 
-[ -n "$(declare -F pathmunge)" ] && {
-  [ -d ~/.bin ] && pathmunge ~/.bin
-  [ -d ~/.local/bin ] && pathmunge ~/.local/bin
+declare >/dev/null -F pathmunge && {
+  [[ -d ~/.bin ]] && pathmunge ~/.bin
+  [[ -d ~/.local/bin ]] && pathmunge ~/.local/bin
 }
 
-if [ "${EUID:-}" != 0 ] ; then
-  [ -z "$XDG_RUNTIME_DIR" -a -d "/run/user/$EUID" ] && \
+if [[ ${EUID-} != 0 ]] ; then
+  [[ -z $XDG_RUNTIME_DIR && -d /run/user/$EUID ]] && \
     export XDG_RUNTIME_DIR="/run/user/$EUID"
   alias sc='systemctl --user'
   alias jc='journalctl --user'
@@ -21,24 +23,20 @@ else
   alias jc=journalctl
 
   asuser() { # <uid> <cmd>...
-    [ -z "$1" ] && echo "Usage: asuser <user> [ <cmd>... ]" && return 1
+    [[ $1 ]] || { echo "Usage: asuser <user> [ <cmd>... ]"; return 1; }
     local uid=$(id 2>/dev/null -ru "$1") gid=$(id 2>/dev/null -rg "$1")
-    [ -z "$uid" -o -z "$gid" ] && echo "Invalid user '$1'" && return 2
+    [[ $uid && $gid ]] || { echo "Invalid user '$1'"; return 2; }
     shift
-    [ -z "$1" ] && set bash
-    setpriv --reset-env --no-new-privs --reuid=$uid --regid=$gid --init-groups env XDG_RUNTIME_DIR=/run/user/$uid "$@"
+    [[ $1 ]] || set bash
+    setpriv --reset-env --no-new-privs --reuid=$uid --regid=$gid \
+            --init-groups env XDG_RUNTIME_DIR="/run/user/$uid" "$@"
   }
 
   scu() { # <uid> [<cmd>]...
-    [ -z "$1" ] && echo "Usage: scu <user> [ <sc arg> ]" && return 1
+    [[ $1 ]] || { echo "Usage: scu <user> [ <sc arg> ]"; return 1; }
     local user=$1; shift
     asuser "$user" systemctl --user "$@"
   }
 fi
 
-[ -n "$INSIDE_EMACS" ] && export SYSTEMD_PAGER=
-
-# Local Variables:
-# sh-basic-offset: 2
-# indent-tabs-mode: nil
-# End:
+[[ $INSIDE_EMACS ]] && export SYSTEMD_PAGER=

@@ -1,6 +1,8 @@
-# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
+# -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
+# vim:set ft=sh et sw=2 ts=2:
+#
 # emacs.sh - setup emacs aliases if we have the correct environment
-
+#
 # Requires the following in ~/.emacs (or home-start.el)
 #
 #;; Start server so shell commands can talk to emacs
@@ -12,19 +14,17 @@
 command -v ediff &>/dev/null && export MERGE=ediff
 
 # Skip all for noninteractive shells.
-[ ! -t 0 ] && return
+[[ -t 0 ]] || return 0
 
 setup_emacs() {
 
-  if [ -n "$INSIDE_EMACS" ]; then
-    # fallback pager
-    export PAGER="/bin/cat"
-  fi
+  # fallback pager
+  [[ $INSIDE_EMACS ]] && export PAGER="/bin/cat"
 
-  command -v emacsclient &>/dev/null || return
+  command -v emacsclient &>/dev/null || return 0
 
   # shell inside emacs, and server alive...
-  if [ -n "$INSIDE_EMACS" ] &&
+  if [[ $INSIDE_EMACS ]] &&
        emacsclient -s "$MYEC_SERVER_NAME" -e t &>/dev/null; then
 
     # EDITOR should block inside emacs
@@ -59,17 +59,10 @@ setup_emacs() {
 
     # outside emacs, have emacsclient
     local myec_tty=$(tty)
-    if [ -n "$myec_tty" ]; then
-      # use only the tty filename
-      export MYEC_SERVER_NAME=server-${myec_tty##*/}
-    fi
+    # use only the tty filename
+    [[ $myec_tty ]] && export MYEC_SERVER_NAME="server-${myec_tty##*/}"
   fi
 }
 
 setup_emacs
 unset -f setup_emacs
-
-# Local Variables:
-# sh-basic-offset: 2
-# indent-tabs-mode: nil
-# End:
