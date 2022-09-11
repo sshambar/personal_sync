@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# photo-setdate v0.6 - Attempts to repair file modified-date based on exif
+# media-setdate v0.7 - Attempts to repair file modified-date based on exif
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright (C) 2019 Scott Shambarger
+# Copyright (C) 2019-22 Scott Shambarger
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,94 +19,221 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# Requires: Bash 4+ (attempts to find in /usr/local/bin or /opt/local/bin)
+# Requires: Bash 4+
 #
-# This program runs in two modes: guess and update
+# PROBLEM TO SOLVE
+#
+# The program attempts to set the file modified time to match
+# the media modification time stored in the EXIF tags.  The correction
+# is necessary if the files were copied (rather than moved) and the original
+# modification time changed.
+#
+# Extracting the "Modified" time is academic if the full time + timezone
+# is available in the tags, but older EXIF standards (<231) failed
+# to include TZ values or offsets, and so only include "localtime"
+# without any hints at where "local" is.
+#
+# Luckily, if the "Captured" date and the "Modified" date are the same,
+# the GPS location tags may be used to locate the "local" timezone the
+# media was created in. Resolving the GPS location to TZ requires use
+# of a docker container with the mapping library (which must be started
+# independently).
+#
+# NOTE: If the file was modified at a different time (eg edited), the
+# GPS tags may not represent the timezone.
+#
+# If the container is not available (or location missing), the GPSDate/Time
+# tag (if present) may be used to guess the timezone.
+# GPS timestamps are in UTC; however, these timestamps can sometimes be
+# incorrect as the precise GPS data may not have been available when
+# the media was captured.  In those cases, the program attempts to
+# use a "fudge factor" (small offset) to guess which timezone the
+# "local" time refers to, and if enough files taken in approximate the
+# same area are available, a selection of possible matching timezones
+# can be found.  One of these timezones can then be used to convert
+# the precise "localtime" modification to the correct UTC time, and
+# used to update the file modification time.
+#
+# Timezones are used in place of UTC-offsets as they can correctly
+# handle the daylight savings offsets of the "localtime"
+#
+# This program runs in two modes: GUESS and UPDATE
 #
 # GUESS MODE
 #
-# Walks all candidate files and reads exif values looking for GPS (UTC) dates
-# If it finds some, attempts to guess timezones that would match the
-# media's "Capture Date".  Candiate timezones are listed with the %
-# of files that they matched (ie. likely timezones).
+# Guess mode must be run on a group of files that were taken at the
+# same general timezone area.
 #
-# guess mode can be run with a candidate timezone, and will show the date
-# offsets between the GPS and "Capture Date" based on that timezone (trial run)
+# It walks all candidate files and reads EXIF tags looking for precise
+# modification times, and failing that, the GPS location or timestamp.
+# If the GPS tags are required (and available), the location-mapped or
+# offset-guessed timezones are calculated.  Candiate timezones are then
+# listed with the percent of files they were guessed from.
+#
+# GUESS mode can be run with a candidate "default" timezone, and will
+# show the offsets between the "Capture" and GPS time based on
+# that timezone (to check if the timezone appears correct).
 #
 # UPDATE MODE
 #
-# Using a candidate timezone, reads all the "Capture Dates" and converts to
-# the target timezone and "touches" the file with that date.
+# Updates the file modification times based on precise modification tags,
+# using GPS -> TZ mapping (requires the GPS->TZ container), or using
+# a default timezone from the "GUESS" mode above otherwise.
 #
+# EXIF TAGS USED:
+#   Composite: SubSecModifyDate - full file create time (used if present)
+#   Composite: SubSecDateTimeOriginal - used if no ModifyDate present
+#   Composite: SubSecCreateDate - same, but SubSecDTOriginal also missing
+#   Composite: GPSDateTime - approx original capture time (UTC)
+#   Composite: GPSLongitude + GPSLatitude - location at capture (used GPS->TZ)
+#   EXIF: ModifyDate - date file created
+#   EXIF: OffsetTime - TZ offset of ModifyDate (EXIF >= 0231) (*)
+#   EXIF: DateTimeOriginal - date original created (to compare with GPS time)
+#   EXIF: CreateDate - date original digitized (used if no DateTimeOriginal)
+#   EXIF: GPSDateStamp + GPSTimeStamp - approx original capture (UTC) (*)
+# * - these items aren't used directly, as they will be in Composite
+
+# GPS to TZ article:
+#   https://stackoverflow.com/questions/16086962/how-to-get-a-time-zone-from-a-location-using-latitude-and-longitude-coordinates
+# Node-JS Source:
+#   https://github.com/evansiroky/node-geo-tz
+# Container start:
+#   docker run -d -p 3000:80 --rm tobias74/timezone-lookup:latest
+# GPS URL:
+#   curl "http://localhost:3000/timezone?latitude=12&longitude=34"
+
+# this format should be accepted by unix "date -d"
+DATE_FMT="%Y/%m/%d %H:%M:%S"
+# this should be format accepted by GPS -> TZ system
+GPS_COORD="%+.6f"
+USE_GPS=1
+GPS_URL_FMT="http://localhost:3000/timezone?latitude=%s&longitude=%s"
 
 log() { echo "$*"; }
-req_exe() { ! command -v "$*" >/dev/null && log "Where is '$*'?" && exit 1; }
+err() { echo >&2 "$*"; }
+fatal() { err "$*"; exit 1; }
+req_exe() { command -v "$*" >/dev/null || fatal "Where is '$*'?"; }
 
 # validates Bash 4+
-[[ ${BASH_VERSION%%.*} -lt 4 ]] && { log "Bash v4+ required!" && exit 1; }
+(( ${BASH_VERSINFO[0]} >= 4 )) || fatal "Bash v4+ required!"
 
-# max secs that gps and orig-date can differ to consider them for comparison
-FUDGE_SECS=${FUDGE_SECS:-180}
+# max secs that gps and create-date can differ to consider them for comparison
+FUDGE_SECS=${FUDGE_SECS:-300}
 EXIFTOOL=${EXIFTOOL:-exiftool}
+FIX_SECS=60
 
 usage() {
   local prog=${0##*/}
-  echo "Usage: $prog [options] guess [tz=TimeZone] <file>..."
-  echo "Usage: $prog [options] [test] tz=TimeZone <file>..."
-  echo "  options:"
-  echo "    verbose - verbose logging"
-  echo "    oldest=<file> - don't process older files (modify-time)"
+  echo "Usage: $prog [<options>] -g [-z TimeZone] <file>..."
+  echo "Usage: $prog [<options>] -z TimeZone <file>..."
+  echo "  -z TimeZone is used as default timezone when file TZ unknown"
+  echo "  <options>:"
+  echo "    -h - print help"
+  echo "    -n - dry run (modify-time not changed)"
+  echo "    -c - disable use of GPS->TZ URL (see below)"
+  echo "    -v - verbose output (repeatable)"
+  echo "    -f - force setting date (otherwise < ${FIX_SECS}s skipped)"
+  echo "    -l <file> - only process files newer than <file> (modify-time)"
   echo "Overrides: EXIFTOOL='$EXIFTOOL' FUDGE_SECS=$FUDGE_SECS"
+  echo ""
+  echo "To start GPS->TZ container, URL is http://localhost:3000"
+  echo "  docker run -d -p 3000:80 --rm tobias74/timezone-lookup:latest"
   exit
 }
 
+verbose() {
+  [[ $VERBOSE ]] && log "$*"
+}
+verbose2() {
+  [[ $VERBOSE ]] && (( VERBOSE > 1 )) && log "$*"
+}
+
 cmdecho() {
-  log "  $*"
+  verbose2 "  $*"
 }
 
 TEST=
 GUESS=
-VERBOSE=
+VERBOSE=0
 OLDEST=
-tz=
+DEF_TZ=
 
 # parse args
-done=
-while [[ $1 ]]; do
-      case "$1" in
-      test) TEST=cmdecho;;
-      help|-*) usage;;
-      guess) GUESS=1;;
-      verbose) VERBOSE=1;;
-      oldest=*) OLDEST=${1#oldest=};;
-      tz=*) [[ $tz ]] && usage
-            tz=${1#tz=};;
-      *) done=1;;
-      esac
-      [[ $done ]] && break
-      shift
+while getopts "cfghl:nvz:" ARG; do
+  case $ARG in
+    c) USE_GPS=;;
+    f) FIX_SECS=1;;
+    g) GUESS=1;;
+    h) usage;;
+    n) TEST=cmdecho;;
+    v) (( VERBOSE++ )) || :;;
+    l) [[ $OLDEST ]] && usage
+       OLDEST=$OPTARG;;
+    z) [[ $DEF_TZ ]] && usage
+       [[ -d /usr/share/zoneinfo ]] && {
+         [[ -f /usr/share/zoneinfo/$OPTARG ]] || \
+           fatal "$OPTARG not found in /usr/share/zoneinfo"
+       }
+       DEF_TZ=$OPTARG;;
+    *) usage;;
+  esac
 done
+shift $(( OPTIND - 1 ))
 
-[ -z "$tz" -a -z "$GUESS" ] && usage
+[[ $VERBOSE == 0 ]] && VERBOSE=
 
 [[ $1 ]] || usage
 
-[ -z "$OLDEST" -o -f "$OLDEST" ] || { log "oldest ref $OLDEST missing!"
-                                      exit 1; }
+[[ $OLDEST && ! -f $OLDEST ]] && fatal "\"newer-than\" file '$OLDEST' missing!"
 
 req_exe "$EXIFTOOL"
 
-verbose() {
-  [ -n "$VERBOSE" ] && log "$*"
+# echo offset (in 15min intervals)
+calc_offset() {
+  # <orig> <gps>
+  local orig=$1 gps=$2 adj abs
+
+  # check if we can trust the GPS date for ref... FUDGE_SECS max offset
+  (( adj = (orig - gps) % 900, abs = adj > 0 ? adj : -adj )) || :
+  (( abs < FUDGE_SECS || abs > (900 - FUDGE_SECS) )) || return 0
+  # calc offset rounding up/down if required
+  echo $(( (orig - gps) / 900 + ((abs > (900 - FUDGE_SECS)) \
+                                   ? ((adj < 0) ? -1 : 1) : 0) ))
 }
 
-suggest_zones() {
-  # <offset>
-  local zones offset=$1
-  zoff=$(printf "%+03d:%02d" $(( offset / 4 )) \
-                $(( ((offset<0)?-offset:offset) % 4 )))
-  while read -a zones; do
-    [[ ${zones[1]} = $zoff || ${zones[2]} = $zoff ]] && echo -n "${zones[0]} "
+unix_to_date_str() {
+  # <unix-time> [<fmt>] - echo date in <fmt> (or default)
+  local _fmt=$2
+  [[ $_fmt ]] || _fmt=$DATE_FMT
+  if [[ $DARWIN ]]; then
+    date -r $1 "+$_fmt" || return
+  else
+    date -d @$1 "+$_fmt" || return
+  fi
+  return 0
+}
+
+date_str_to_unix() {
+  # <ret> <tz> <date> (YYYY/MM/DD HH:MM:SS) - echo unix-secs
+  local _r
+  if [[ $DARWIN ]]; then
+    _r=$(TZ=$2 date -j -f "$DATE_FMT" "$3" "+%s") || return
+  else
+    _r=$(TZ=$2 date -d "$3" "+%s") || return
+  fi
+  printf -v "$1" '%s' "$_r"
+}
+
+declare -A VZONES=([0]="UNSET")
+
+load_vzones() {
+  VZONES=()
+  # load zones recognized on local system
+  local -a azones
+  while read -a azones; do
+    [[ -d /usr/share/zoneinfo && \
+         ! -f /usr/share/zoneinfo/${azones[0]} ]] && continue
+    VZONES[${azones[0]}]="${azones[1]};${azones[2]}"
   done << "EOF"
 Africa/Abidjan +00:00 +00:00
 Africa/Accra +00:00 +00:00
@@ -483,104 +610,211 @@ Pacific/Tongatapu +13:00 +14:00
 Pacific/Wake +12:00 +12:00
 Pacific/Wallis +12:00 +12:00
 EOF
-  echo
-}
-
-get_date() {
-  # <epoch> [<fmt>] - echo date in <fmt> (or default)
-  local fmt=$2
-  [ -z "$fmt" ] && fmt="%Y/%m/%d %H:%M:%S"
-  if [[ $DARWIN ]]; then
-    date -r $1 "+$fmt"
-  else
-    date -d @$1 "+$fmt"
-  fi
-}
-
-parse_date() {
-  # <date> (YYYY/MM/DD HH:MM:SS) - echo unix-time
-  if [[ $DARWIN ]]; then
-    date  -j -f "%Y/%m/%d %H:%M:%S" "$1" "+%s"
-  else
-    date -d "$1" "+%s"
-  fi
-}
-
-get_mtime() {
-  # <file> - echo modified time in unix-time
-  if [[ $DARWIN ]]; then
-    stat -f "%m" "$1"
-  else
-    stat -c "%Y" "$1"
-  fi
-}
-
-calc_offset() {
-  # calc zone offset (in 15min intervals)
-  # <orig> <gps> - echos offset
-  # check if we can trust the GPS date for ref... 3 mins max offset
-  local orig=$1 gps=$2
-  local adj=$(( (orig - gps) % 900 ))
-  local abs=$(( adj>0?adj:-adj ))
-  [[ $abs -lt $FUDGE_SECS || $abs -gt $((900 - FUDGE_SECS)) ]] || return 0
-  # calc offset rounding up/down if required
-  echo $(( (orig - gps) / 900 + ((abs > (900 - FUDGE_SECS)) \
-                                   ? ((adj < 0) ? -1 : 1) : 0) ))
-}
-
-guess_zones() {
-  # based on tdate(YYYY/MM...format), gps(epoch), and offset guess timezones
-  # <tdate> <gps> <offset> - updates $zones[tz]=<count>
-  local tdate=$1 gps=$2 offset=$3
-  local -a czones=$(suggest_zones $offset)
-  local z zdate zdiff
-  for z in ${czones[@]}; do
-    zdate=$(TZ=$z parse_date "$tdate")
-    zdiff=$(( zdate > gps ? (zdate-gps) : (gps-zdate) ))
-    [ $zdiff -lt $FUDGE_SECS ] && (( zones[$z]++ ))
-  done
   return 0
 }
 
-file_zones() {
-  # Based on file extension, call guess_zones from gps-orig_date offsets
-  # <file> - update array $zones[]
-  local file=$1 orig_tag gps_tag ltz=$tz
+# based on offsets for each TZ, echo likely candidates
+suggest_zones() {
+  # <orig(DATE_FMT)> <gps-time(unix-secs)>
+  local zdate zoff
+  date_str_to_unix zdate UTC "$1" || return
+  local offset=$(calc_offset "$zdate" "$2")
+
+  # round values to hours
+  printf -v zoff "%+03d:%02d" "$(( offset / 4 ))" \
+         "$(( ((offset<0)?-offset:offset) % 4 ))"
+  [[ ${VZONES[0]} == "UNSET" ]] && load_vzones
+  local z v
+  for z in ${!VZONES[*]}; do
+    v=${VZONES[$z]}
+    [[ ${v#*;} == $zoff || ${v%;*} == $zoff ]] && echo -n "$z "
+  done
+  echo
+}
+
+get_mtime() {
+  # <ret> <file> - echo modified time in unix-time
+  local _r
+  if [[ $DARWIN ]]; then
+    _r=$(stat -f "%m" "$2") || _r=
+  else
+    _r=$(stat -c "%Y" "$2") || _r=
+  fi
+  printf -v "$1" '%s' "$_r"
+}
+
+# sets assoc array $ftags[] with file tags, also adds:
+#  ModifyUnix - modification time in unix-time (if present)
+#  ModifyTime - modification time in $DATE_FMT (no TZ)
+#  CreateTime - preferred creation time in $DATE_FMT (no TZ)
+# returns failure if unknown file type or CreateTime missing
+ftags_for_file() {
+  # <file>
+  local file=$1 tags line zoffset
   case ${file,,} in
-    *.jpg|*.jpeg) orig_tag=DateTimeOriginal; gps_tag=GPSDateTime;;
+    *.jpg|*.jpeg|*.png)
+      tags="-EXIF:ModifyDate -EXIF:DateTimeOriginal -EXIF:CreateDate"
+      tags+=" -Composite:SubSecModifyDate"
+      tags+=" -Composite:SubSecDateTimeOriginal"
+      tags+=" -Composite:SubSecCreateDate"
+      tags+=" -Composite:GPSDateTime"
+      tags+=" -Composite:GPSLatitude -Composite:GPSLongitude"
+      ;;
     # mp4 is UTC already
-    *.mp4|*.mpeg4) orig_tag=CreateDate; ltz=${tz:+UTC};;
+    *.mp4|*.mpeg4)
+      tags="-Quicktime:ModifyDate -Quicktime:CreateDate"
+      zoffset=0
+      ;;
+    *)
+      verbose "skipping $file"
+      return 1
+      ;;
   esac
-  [[ $orig_tag ]] || { verbose "skipping $file"; return 0; }
-  [[ $gps_tag || $tz ]] || { verbose "skipping $file"; return 0; }
 
-  local line gps orig
+  # retrieve values in unix-time and $GPS_COORD
+  verbose2 "exiftool tags for $file"
   while read -r line; do
-    case ${line%: *} in
-      $gps_tag) gps=${line#*: };;
-      $orig_tag) orig=${line#*: };;
-      *) log "BUG: guess_offset: Unrecognized tag: ${line%: *}" && exit 11;;
-    esac
-  done < <(TZ=${ltz:-UTC} "$EXIFTOOL" -s -s -d "%s" ${gps_tag:+-}${gps_tag} -${orig_tag} "$file")
+    ftags[${line%: *}]=${line#*: }
+    verbose2 "  $line"
+  done < <(TZ=UTC "$EXIFTOOL" -s -s -a -d "+%s" -c "$GPS_COORD" $tags "$file")
 
-  [[ $orig ]] || { verbose "No Date in $file"; return 0; }
+  [[ ${ftags[@]} ]] || {
+    verbose "No EXIF tags in $file"
+    return 1
+  }
 
-  # with tz, just show origdate to compare with filename
-  if [ -n "$tz" ]; then
-    log "$file"
-    log "    OrigDate: $(TZ=$tz get_date $orig)"
-    if [[ $gps ]]; then
-       log "     GPSDate: $(TZ=$tz get_date $gps)"
-       [ $gps -ne $orig ] && log "       ERROR: $((gps - orig))"
-    fi
+  local cdate mdate
+  if [[ $zoffset ]]; then
+    # we know the TZ offset, use it
+    mdate=${ftags[ModifyDate]}
+    cdate=${ftags[CreateDate]}
+  else
+    mdate=${ftags[SubSecModifyDate]}
+    [[ $mdate ]] && zoffset=0
+    [[ $mdate ]] || mdate=${ftags[ModifyDate]}
+    [[ $mdate ]] || {
+      # no ModifyDate! check for accurate Create as fallback
+      mdate=${ftags[SubSecDateTimeOriginal]}
+      [[ $mdate ]] || mdate=${ftags[SubSecCreateDate]}
+      [[ $mdate ]] && zoffset=0
+    }
+
+    # CaptureTime only used for GPS guessing if Modify has no TZ
+    cdate=${ftags[DateTimeOriginal]}
+    [[ $cdate ]] || cdate=${ftags[CreateDate]}
+  fi
+
+  # capture falls back to modify if no other values
+  [[ $cdate ]] || cdate=$mdate
+
+  [[ $cdate ]] || {
+    verbose "No capture or modify date found in $file"
+    return 1
+  }
+
+  # modify falls back to capture if no other values
+  [[ $mdate ]] || mdate=$cdate
+
+  if [[ $zoffset ]]; then
+    # if we have this, we don't really need anything else...
+    (( ftags[ModifyUnix] = mdate - zoffset ))
+    verbose2 " >ModifyUnix: ${ftags[ModifyUnix]}"
     return 0
   fi
 
-  local tdate=$(TZ=UTC get_date $orig)
-  verbose "OrigDate: $tdate - $file"
-  [[ $gps ]] || { verbose "No GPS date in $file"; return 0; }
-  offset=$(calc_offset "$orig" "$gps")
-  guess_zones "$tdate" "$gps" "$offset"
+  # Use UTC as passed to exiftool to get original EXIF tag value back
+  ftags[ModifyTime]=$(TZ=UTC unix_to_date_str $mdate)
+  verbose2 " >ModifyTime: ${ftags[ModifyTime]}"
+
+  if [[ $mdate == $cdate ]]; then
+    # if Modify == Create, we can try guessing TZ from Create vs GPSTime
+    ftags[CreateTime]=$(TZ=UTC unix_to_date_str $cdate)
+    verbose2 " >CreateTime: ${ftags[CreateTime]}"
+  fi
+
+  return 0
+}
+
+gps_loc_to_zone() {
+  # <ret>
+  printf -v "$1" '%s' "" || return 1
+  [[ $USE_GPS && ${ftags[GPSLatitude]} && ${ftags[GPSLongitude]} ]] || return 1
+
+  local _z _u
+  printf -v _u "$GPS_URL_FMT" "${ftags[GPSLatitude]}" "${ftags[GPSLongitude]}"
+  _z=$(curl -fkLsS -m 3 2>&1 "$_u") || {
+    # show reason why GPS mapping failed
+    err "GPS location service returned ${_z:-failure}"
+    err "Disabling GPS to timezone mapping"
+    USE_GPS=
+    return 1
+  }
+
+  # strip to 1st zone
+  [[ $_z ]] && { _z=${_z%%\"\]*}; _z=${_z#*\[\"}; }
+  [[ $_z ]] || return 1
+  printf -v "$1" '%s' "$_z"
+}
+
+file_zones() {
+  # <file> - update array $zones[]
+  # Based on file extension, compare gps and create-date
+  local file=$1
+  local -A ftags
+  ftags_for_file "$file" || return 0
+
+  if [[ ${ftags[ModifyUnix]} ]]; then
+    verbose "File has zone offset: $file"
+    (( zones["KNOWN"]++, zfiles++ )) || :
+    return 0
+  fi
+
+  # check if we can get TZ from GPS location
+  local zone def_zone
+
+  if [[ ${ftags[CreateTime]} ]] && gps_loc_to_zone zone; then
+    log "GPS TZ ($zone) - $file"
+    (( zones["$zone"]++, zfiles++ )) || :
+  fi
+
+  # use $DEF_TZ if we don't have any other TZ source
+  [[ $zone ]] || { zone=$DEF_TZ; def_zone=1; }
+
+  local zdate gdate gps=${ftags[GPSDateTime]} orig=${ftags[ModifyTime]}
+
+  # with tz, just show origdate to compare with filename
+  if [[ $zone ]]; then
+    [[ $def_zone ]] && log "Default TZ - $file"
+    if [[ $def_zone || $VERBOSE ]] && [[ $gps && ${ftags[CreateTime]} ]]; then
+      log "   CreateTime: $orig"
+      # show offset of CreateTime vs GPS in $zone
+      if date_str_to_unix zdate "$zone" "$orig"; then
+        gdate=$(TZ=$zone unix_to_date_str "$gps")
+        local offset
+        (( gps != zdate )) && (( offset = gps - zdate ))
+        [[ $offset ]] && gdate+=" ($offset)"
+        log "  GPSTime->TZ: $gdate"
+      fi
+    fi
+  elif [[ $gps && ${ftags[CreateTime]} ]]; then
+    # fallback to guessing timezone from GPS time offset
+    gdate=$(TZ=UTC unix_to_date_str "$gps")
+    verbose "Zone guess: '$orig' vs GPS '$gdate' - $file"
+
+    local -a czones=$(suggest_zones "$orig" "$gps")
+    local zdiff
+    for zone in ${czones[@]}; do
+      date_str_to_unix zdate "$zone" "$orig" || continue
+      (( zdiff = (zdate > gps ? (zdate-gps) : (gps-zdate)) )) || :
+      (( zdiff < FUDGE_SECS && zones[$zone]++ )) || :
+    done
+    [[ $zone ]] && { (( zfiles++, ufiles++ )) || :; }
+  elif [[ ${ftags[CreateTime]} ]]; then
+    verbose "No GPS data - $file"
+  else
+    verbose "Modify != Create (no GPS guessing) - $file"
+  fi
+
   return 0
 }
 
@@ -588,50 +822,72 @@ update_file() {
   # <file>
 
   # find tags for filetype
-  local tag orig line ltz=$tz
-  case ${1,,} in
-    *.jpg|*.jpeg) tag=DateTimeOriginal;;
-    # mp4 is UTC already
-    *.mp4|*.mpeg4) tag=CreateDate; ltz=UTC;;
-    *) log "skipping $1"; return 0;;
-  esac
-
-  # parse exif date for date (as unix-time)
-  while read -r line; do
-    case ${line%: *} in
-      $tag) orig=${line#*: };;
-      *) log "BUG: process_file: Unrecognized tag: ${line%: *}" && exit 10;;
-    esac
-  done < <(TZ=$ltz "$EXIFTOOL" -s -s -d "%s" -${tag} "$1")
-  [[ $orig ]] || { verbose "No Date in $1"; return 0; }
+  local file=$1
+  local -A ftags
+  verbose "-> Processing $file"
+  ftags_for_file "$file" || return 0
 
   # check if file "almost" correct....
-  local forig=$(get_mtime "$1")
-  local fdiff=$(( forig > orig ? (forig - orig) : (orig - forig)))
-  [ $fdiff -lt 60 ] && { verbose "OK (${fdiff}s) - $1"; return 0; }
+  local zone mdate def_zone
+  if [[ ${ftags[ModifyUnix]} ]]; then
+    verbose "File contains accurate ModifyTime"
+    mdate=${ftags[ModifyUnix]}
+    zone=UTC
+  else
+    [[ ${ftags[CreateTime]} ]] && gps_loc_to_zone zone
+    if [[ $zone ]]; then
+      verbose "Using GPS -> TZ ($zone)"
+    elif [[ $DEF_TZ ]]; then
+      verbose "Using default TZ"
+      def_zone=1 zone=$DEF_TZ
+    else
+      log "No GPS data (and no default TZ), skipping - $file"
+      return 0
+    fi
+    local orig=${ftags[ModifyTime]}
+    date_str_to_unix mdate "$zone" "$orig" || {
+      err "Date convertion of $orig to $zone failed - $file"
+      return 1
+    }
+  fi
+
+  local forig fdiff
+  get_mtime forig "$file"
+
+  (( fdiff = ( forig > mdate ) ? (forig - mdate) : (mdate - forig) ))
+  (( fdiff < FIX_SECS )) && {
+    verbose "File OK (offset ${fdiff}s)"
+    return 0
+  }
 
   # ok update file date
-  log "$1"
-  log "  New $(TZ=$tz get_date $orig)"
-  verbose "  Cur $(TZ=$tz get_date $forig)"
-  local fdate=$(TZ=$tz get_date $orig "%Y%m%d%H%M.%S")
-  TZ=$tz $TEST touch -c -t "$fdate" "$1"
-  if [ -z "$TEST" ]; then
-    local fnew=$(get_mtime "$1")
-    log "  Upd $(TZ=$tz get_date $fnew)"
-  fi
-  return 0
+  [[ $def_zone ]] && (( zfiles++ ))
+  (( ufiles++ ))
+  log "${TEST:+(DRY-RUN) }Fixing: $file"
+  log "  New $(TZ=$zone unix_to_date_str $mdate) (TZ:$zone, unix:$mdate)"
+  verbose "  Cur $(TZ=$zone unix_to_date_str $forig)"
+
+  local fdate=$(TZ=UTC unix_to_date_str $mdate "%Y%m%d%H%M.%S")
+  TZ=UTC $TEST touch -c -t "$fdate" "$file"
+  [[ $TEST ]] && return 0
+
+  get_mtime fdate "$file"
+  log "  Upd $(TZ=$zone unix_to_date_str $fdate)"
 }
 
 process_file() {
   # decide if we're dealing with the file, and how
   local file=$1
-  if [ -n "$OLDEST" ]; then
-    local fmtime=$(get_mtime "$file")
-    [ "$fmtime" -lt "$OLDEST" ] && { verbose "$file too old, skipping...";
-                                     return 0; }
+  if [[ $OLDEST_TIME ]]; then
+    local fmtime
+    get_mtime fmtime "$file"
+    (( $fmtime <= $OLDEST_TIME )) && {
+      verbose "Skipping old file: $file"
+      return 0
+    }
   fi
-  if [ -n "$GUESS" ]; then
+  (( files++ ))
+  if [[ $GUESS ]]; then
     file_zones "$file"
   else
     update_file "$file"
@@ -646,24 +902,38 @@ case $(uname -s) in
 esac
 
 # convert OLDEST to mtime
-[ -n "$OLDEST" ] && OLDEST=$(get_mtime "$OLDEST")
+[[ $OLDEST ]] && get_mtime OLDEST_TIME "$OLDEST"
 
 declare -A zones
-n=0
-for file in "$@"; do
-  (( n++ ))
-  process_file "$file"
+files=0 zfiles=0 ufiles=0
+for arg in "$@"; do
+  if [[ -f $arg ]]; then
+    process_file "$arg"
+  elif [[ -d $arg ]]; then
+    while IFS= read -r -d '' file; do
+      process_file "$file"
+    done < <(find "$arg" -type f ${OLDEST:+-newer "$OLDEST"} -print0)
+  else
+    log "Argument '$arg' not found"
+  fi
 done
 
-if [ -n "$GUESS" ]; then
+if [[ $GUESS ]]; then
   # GUESS MODE
   # now for each offset, display % of files, and likely TZ values
+  z=
   for z in "${!zones[@]}"; do
-    log "$(( (${zones["$z"]} * 100) / n ))% $z"
+    log "$(( (${zones["$z"]} * 100) / zfiles ))% $z ($(( (${zones["$z"]} * 100) / files ))% total)"
   done
-  [ -n "$tz" ] && exit 0
-  [ -z "$z" ] && { log "No files with GPS dates found!"; exit 0; }
-  log "You can re-try guess with tz=<zone> to see dates that would be set"
-  exit 0
+  [[ $DEF_TZ ]] && exit 0
+  if (( ufiles > 0 )); then
+    log "You can re-try guess with -z <zone> to see dates that would be set"
+  elif [[ -z $z ]]; then
+    log "No files with GPS data found!"
+  fi
+else
+  log "Processed $files files"
+  log "${TEST:+(DRY-RUN) }Fixed $ufiles files${DEF_TZ:+ ($zfiles using default timezone)}"
 fi
 
+exit 0
