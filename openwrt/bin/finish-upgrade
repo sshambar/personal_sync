@@ -1,15 +1,37 @@
 #!/bin/sh
 
-# finish-upgrade v1.9
+# finish-upgrade v1.10
 
 # Installs all extra packages, and fixes up things like admin_user dir
 
 [ $(id -u) -ne 0 ] && echo "Run as root!" && exit 1
 
-[ "$1" = "-d" ] && shift && debug=echo
+usage() {
+  echo "Install selected packages previously configured"
+  echo "Usage: ${0} -h | help"
+  echo "Usage: ${0} [ -d ] [ full ]"
+  echo "  -h - Show this help and exit"
+  echo "  -d - debug mode (dry-run)"
+  echo "  full - install all packages, even ones not configured before"
+  exit 0
+}
+
+help() {
+  echo >&2 "$1 (-h for help)"
+  exit 1
+}
 
 full=
-[ "$1" = full ] && shift && full=1
+
+while [[ $1 ]]; do
+  case "$1" in
+    -d) debug=echo;;
+    full) full=1;;
+    -h|help) usage;;
+    *) help "Unknown option '$1'";;
+  esac
+  shift
+done
 
 set -e
 
@@ -160,6 +182,10 @@ if [[ -f /etc/profile.d/console.sh ]]; then
   # could crawl /sys/bus/usb for idVendor=067b idProduct=2303, or just
   # use most likely driver
   install_pkgs kmod-usb-serial-pl2303
+fi
+
+if [[ -f /usr/bin/resize ]]; then
+  install_pkgs coreutils-stty
 fi
 
 # regular packages
