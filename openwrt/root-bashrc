@@ -1,0 +1,14 @@
+# root .bashrc
+
+# interactive only
+[[ $- == *i* ]] || return 0
+
+unset HISTFILE
+
+# load profile entries
+for FILE in /etc/profile.d/*.sh; do
+  [[ $FILE =~ ^sys_ ]] && continue
+  [[ -e $FILE ]] && . "$FILE"
+done
+unset FILE
+
