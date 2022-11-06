@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# find-diffs v1.1.2 - Finds candidates for adding to /etc/sysupgrade.conf
+# find-diffs v1.2.0 - Finds candidates for adding to /etc/sysupgrade.conf
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright (C) 2018-2020 Scott Shambarger
+# Copyright (C) 2018-2022 Scott Shambarger
 #
 # Finds all changed files in /overlay/upper compared to /rom
 # Excludes anything in /lib/upgrade/keep.d or /etc/sysupgrade.conf
@@ -212,6 +212,24 @@ ds_ngeti() { # <ret> <n> <key1>...<keyn> <i>
 # A FEW UTITLITY FUNCTIONS
 #
 
+pkgs_update() { # update if opkg lists missing or old
+  local PKG_CORE
+  debug "checking if opkg database current"
+  [[ -f /etc/opkg/distfeeds.conf ]] || {
+    echo "Missing opkg distfeeds.conf"; exit 1; }
+
+  PKG_CORE=$(head -1 /etc/opkg/distfeeds.conf | awk '{ print $2 }')
+
+  if [[ -z $(find 2>/dev/null "/var/opkg-lists/$PKG_CORE" -mtime -1) ]]; then
+    debug "$PKG_CORE older than 1 day, refreshing..."
+    rm -f /var/opkg-lists/$PKG_CORE
+    opkg update
+    [[ -f /var/opkg-lists/$PKG_CORE ]] || exit 1
+    touch /var/opkg-lists/$PKG_CORE
+  fi
+  return 0
+}
+
 shopt -s extglob
 strip() { # <var> <text>
   debug3 "$@"
@@ -373,6 +391,9 @@ fi
 
 [ -d "$ROM/etc" ] || fatal "No '$ROM' mount?"
 [ -d "$OVERLAY/upper" ] || fatal "'$OVERLAY' not an overlay mount?"
+
+# refresh packages
+pkgs_update
 
 case "$mode" in
   files)
