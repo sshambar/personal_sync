@@ -80,8 +80,7 @@ of an error, just add the package to a list of missing packages."
  (when (fboundp 'tool-bar-mode) (tool-bar-mode -1))
  (when (fboundp 'menu-bar-mode) (menu-bar-mode -1))
  ;; make loaded files give a message
- (defadvice load (before debug-log activate)
-   (message "Loading %s..." (locate-library (ad-get-arg 0))))
+ (setq force-load-messages t)
  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -269,8 +268,8 @@ of an error, just add the package to a list of missing packages."
   ;; Pretty-print eval'd expressions.
   (define-key emacs-lisp-mode-map
     "\C-x\C-e" 'pp-eval-last-sexp)
-  ;;(define-key emacs-lisp-mode-map
-  ;;  "\r" 'reindent-then-newline-and-indent))
+  ;; (define-key emacs-lisp-mode-map
+  ;;  "\r" 'reindent-then-newline-and-indent)
   )
 
 (add-hook 'emacs-lisp-mode-hook 'myhome-emacs-lisp-mode-hook t)
@@ -395,9 +394,8 @@ of an error, just add the package to a list of missing packages."
 (XEmacs
  ;; stop showing that annoying progress bar when fontifying
  (setq progress-feedback-use-echo-area nil)
-
  ;; enable Font Lock mode
- ;;(font-lock-mode))
+ ;; (font-lock-mode)
  )
 
 ;;(turn-on-font-lock)
