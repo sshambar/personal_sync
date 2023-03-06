@@ -1,0 +1,43 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+wifi_disable_check() {
+        local disabled
+        config_get disabled $1 disabled
+        [ "$disabled" = "1" ] || wifi_set_disabled=1
+}
+
+wifi_set_disabled() {
+	uci set wireless.$1.disabled=$wifi_set_disabled
+}
+
+wifi_toggle() {
+	local wifi_set_disabled=0
+	config_load wireless
+	config_foreach wifi_disable_check wifi-device
+	if [ "$wifi_set_disabled" = "1" ]; then
+		logger "disabling wifi"
+	else
+		logger "enabling wifi"
+	fi
+	config_foreach wifi_set_disabled wifi-device
+	uci commit wireless
+	wifi reload
+}
+
+case "$ACTION" in
+pressed)
+	return 5
+;;
+timeout)
+	echo "REBOOT" > /dev/console
+	sync
+	reboot
+;;
+released)
+	[ "$SEEN" -lt 1 ] && wifi_toggle
+;;
+esac
+
+return 0

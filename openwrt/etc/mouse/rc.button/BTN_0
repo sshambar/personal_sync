@@ -1,0 +1,63 @@
+#!/bin/sh
+
+if [ -z "$IN_BG" ]; then
+	# background to allow other events
+	export IN_BG=1
+	"$0" 2>/dev/null &
+	return 0
+fi 
+
+# confirm we're the most recent
+echo $$ > "/tmp/button.pid"
+sleep 1
+[ $$ != $(cat "/tmp/button.pid") ] && exit 0
+/bin/rm "/tmp/button.pid"
+
+. /lib/functions.sh
+
+network_reload() {
+	ubus call network reload
+}
+
+update_config() {
+
+	local WC="/etc/config/wireless"
+
+	[ -z "$1" ] && return 0
+
+	logger "Switching to $1"
+
+	case "$1" in
+	wmix)
+		cat "$WC.dev" "$WC.lan" "$WC.wan" > "$WC"
+		;;
+	wwan)
+		cat "$WC.dev" "$WC.wan" > "$WC"
+		;;
+	wan)
+		cat "$WC.dev" "$WC.lan" > "$WC"
+		;;
+	esac
+
+	[ -f "/etc/config/network.$1" ] && cp "/etc/config/network.$1" "/etc/config/network"
+
+	network_reload
+}
+
+case "$ACTION" in
+pressed)
+	logger "Switch to center, switching to wwan mode"
+	update_config wwan
+;;
+released)
+	if [ "$BUTTON" = "BTN_0" ]; then
+		logger "Switch to right, switching to wmix mode (mixed wwan/wlan)"
+		update_config wmix
+	else
+		logger "Switch to left, switching to wan mode (wired wan)"
+		update_config wan
+	fi
+;;
+esac
+
+return 0

@@ -1,0 +1,55 @@
+#!/bin/sh
+
+# make sure we have stty/dd
+command -v stty >/dev/null || exit 0
+command -v dd >/dev/null || exit 0
+
+# put tty in raw mode
+saved_tty=$(stty -g)
+stty raw isig -echo
+
+# Save cursor position
+printf "\0337" > /dev/tty
+
+# Position the cursor to location 999,999
+printf "\033[999;999H" > /dev/tty
+
+# Query the actual cursor position
+printf "\033[6n" > /dev/tty
+
+# read tty response
+# We use dd to read character by character
+# until encountering the R letter,
+# The response syntax is ESC[<row>;<col>R
+while true; do
+    char=$(dd bs=1 count=1 2> /dev/null)
+    if [ "$char" = "R" ] ; then
+        break;
+    fi
+    tty_response="$tty_response$char"
+done
+
+# Restore cursor position
+printf "\0338" > /dev/tty
+
+# restore tty
+stty $saved_tty
+
+# Set up tty
+set_tty_params()
+{
+    stty rows $2 columns $3
+    cat <<!
+COLUMNS=$3;
+LINES=$2;
+export COLUMNS LINES;
+!
+}
+
+# Trick: use IFS to parse the VT100 response.
+# Since [ ; and R are delimiters, this means
+# that the ESC, <row> and <col> will be
+# extracted as tokens, and passed to the
+# function as $1, $2 and $3.
+IFS='[;R'
+set_tty_params $tty_response
