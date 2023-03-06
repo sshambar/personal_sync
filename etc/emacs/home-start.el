@@ -605,4 +605,5 @@ If FACES is not provided or nil, use `face-list' instead."
 ;; Local Variables:
 ;; indent-tabs-mode: nil
 ;; tab-width: 2
+;; no-byte-compile: t
 ;; End:

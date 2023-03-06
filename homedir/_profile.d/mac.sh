@@ -46,7 +46,7 @@ alias ll='ls -l'
 strace() { echo "use dtruss or dtrace"; }
 ldd() { objdump -macho -dylibs-used -non-verbose "$@"; }
 
-alias dialout='screen /dev/cu.SLAB_USBtoUART 115200'
+alias dialout='screen /dev/cu.usbserial-0001 115200'
 
 case $TERM in
   xterm*|screen*)

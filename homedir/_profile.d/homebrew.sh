@@ -19,3 +19,5 @@ add_path PKG_CONFIG_PATH "${HOMEBREW_PREFIX}/lib/pkgconfig"
 export PKG_CONFIG_PATH
 add_path ACLOCAL_PATH "${HOMEBREW_PREFIX}/share/aclocal"
 export ACLOCAL_PATH
+
+export DOCKER_HOST='unix:///Users/scott/.local/share/containers/podman/machine/podman-machine-default/podman.sock'
