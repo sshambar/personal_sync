@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# run by udev 90-extdata-action.rules, and will cleanup
+# leftover devices after forced disk removal so adding the
+# disk back can re-use the names... (or just restart smartd)
+[[ $1 ]] || { echo >&2 "Usage: $0 <napa|tahoe|smartd>"; exit 1; }
+
+LOC=$1
+
+smartd() {
+  # reset smartd
+  systemctl -q is-active smartd && systemctl restart smartd
+  return 0
+}
+
+[[ $LOC == smartd ]] && { smartd; exit 0; }
+
+systemd-mount --umount /mnt/media
+systemd-mount --umount /mnt/backup
+
+# close encrypted device
+if dmsetup &>/dev/null info ${LOC}-backup; then
+  cryptsetup close ${LOC}-backup
+fi
+
+# if block device not removed, deactivate the volume group
+if vgdisplay &>/dev/null extdata_$LOC; then
+  vgchange -an extdata_$LOC
+fi
+
+# these don't appear to get removed by pvscan
+for mnt in backup media; do
+  if dmsetup &>/dev/null info extdata_${LOC}-$mnt; then
+    dmsetup remove extdata_${LOC}-$mnt
+  fi
+done
+
+smartd
+
+exit 0

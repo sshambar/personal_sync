@@ -1,0 +1,8 @@
+
+# Watch for usb disconnect on specific product
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ACTION=="unbind", ENV{PRODUCT}=="174c/1153/*", RUN+="/usr/bin/systemd-run -u extdata-remove --service-type=oneshot /usr/local/libexec/extdata-action tahoe"
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ACTION=="unbind", ENV{PRODUCT}=="174c/55aa/*", RUN+="/usr/bin/systemd-run -u extdata-remove --service-type=oneshot /usr/local/libexec/extdata-action napa"
+
+# Watch for USB disks added (restart smartd)
+SUBSYSTEM=="block", ENV{ID_USB_TYPE}=="disk", ACTION=="add", RUN+="/usr/bin/systemd-run -u extdata-add --service-type=oneshot /usr/local/libexec/extdata-action smartd"
+
