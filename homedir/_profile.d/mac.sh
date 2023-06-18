@@ -62,7 +62,7 @@ if [[ $SSH_AUTH_SOCK ]]; then
   [ $(/usr/bin/ssh-add -l | grep -v ^The | wc -l) -ne 0 ] || {
     echo "Adding keys to ssh-agent..."
     REL=$(uname -r)
-    if [[ ${REL%%.*} -ge 22 ]]; then
+    if [[ ${REL%%.*} -ge 21 ]]; then
       /usr/bin/ssh-add --apple-load-keychain
     else
       /usr/bin/ssh-add -K
