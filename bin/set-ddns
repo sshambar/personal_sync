@@ -1,10 +1,10 @@
 #!/bin/sh
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# set-ddns v0.8 DDNS update script
+# set-ddns v0.9 DDNS update script
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright 2020 Scott Shambarger.  All rights reserved.
+# Copyright 2020-23 Scott Shambarger.  All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -42,9 +42,9 @@
 #
 CONFIG=${DDNS_CONFIG:-/etc/ddns.conf}
 OPTCONFIG="/opt/etc/ddns.conf"
-DDNS_SERVER="www.shambarger.net"
-DDNS_SERVER_FALLBACK="209.76.109.246"
-REMOTE_URL="http://www.shambarger.net/remoteip"
+DDNS_SERVER="shambarger.net"
+DDNS_SERVER_FALLBACK="104.59.218.49"
+REMOTE_URL="http://shambarger.net/remoteip"
 
 # path for optware
 [ -d "/opt/bin" ] && export PATH=/opt/bin:/opt/sbin:/opt/usr/sbin:${PATH}
