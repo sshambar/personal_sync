@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# -*- mode:sh; sh-indentation:4 -*- vim:set ft=sh et sw=4 ts=4:
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [[ $1 == -k ]]; then
+    shift
+fi
+
+ACMD="${1:--h}"
+ARGV="$@"
+SVC='system/httpd'
+PHP_VERS=(php php74 php56)
+HTTPD='/usr/local/opt/httpd/bin/httpd'
+
+if [[ $2 ]] ; then
+    echo Passing arguments to httpd using apachectl is no longer supported.
+    echo You can only start/stop/restart httpd using this script.
+    echo To pass extra arguments to httpd, see the httpd'(8)'
+    echo man page.
+    exit 1
+fi
+
+get_pid() { # <service-target>
+    [[ $1 ]] || return
+    launchctl 2>/dev/null print "$1" | grep "pid =" | awk '{ print $3 }'
+}
+
+svc_running() { # <service-target>
+    [[ $(get_pid "$1") ]]
+}
+
+svc_exists() { # <service-target>
+    [[ $1 ]] || return 1
+    launchctl &>/dev/null print "$1" && return
+    echo "${1#*/} not enabled"
+    return 1
+}
+
+check_config() {
+    # if config ok, return silently...
+    $HTTPD -t 2>/dev/null && return 0
+    $HTTPD -t
+}
+
+svc_start() { # <service-target>
+    local N=${1#*/}
+    svc_exists "$1" || return 0
+    svc_running "$1" && echo "$N already runnning" && return
+    echo "Starting $N"
+    sudo /bin/launchctl kickstart "$1"
+}
+
+svc_restart() { # <service-target>
+    svc_exists >/dev/null "$1" || return 0
+    echo "Restarting ${1#*/}"
+    sudo /bin/launchctl kickstart -k "$1"
+}
+
+svc_stop() { # <service-target>
+    svc_exists >/dev/null "$1" || return 0
+    svc_running "$1" || return 0
+    echo "Stopping ${1#*/}"
+    sudo /bin/launchctl kill TERM "$1"
+}
+
+svc_reload() { # <service-target> [ <signal> ]
+    local N=${1#*/}
+    svc_exists >/dev/null "$1" || return 0
+    svc_running "$1" || { echo "$N not running"; return 0; }
+    echo "Reloading $N"
+    sudo /bin/launchctl kill "${2:-USR1}" "$1"
+}
+
+svc_status() { # <service-target>
+    local N=${1#*/}
+    svc_exists "$1" || return 0
+    local pid=$(get_pid "$1")
+    [[ $pid ]] && echo "$N running, pid $pid" || echo "$N not running"
+}
+
+ERROR=0
+
+case $ACMD in
+start)
+    check_config || exit 1
+    svc_start $SVC || exit 1
+    for php in ${PHP_VERS[@]}; do
+        svc_start system/${php}-fpm || ERROR=$?
+    done
+    ;;
+stop)
+    svc_stop $SVC
+    for php in ${PHP_VERS[@]}; do
+        svc_stop system/${php}-fpm
+    done
+    ;;
+restart)
+    check_config || exit 1
+    svc_restart $SVC || ERROR=$?
+    for php in ${PHP_VERS[@]}; do
+        svc_restart system/${php}-fpm || ERROR=$?
+    done
+    ;;
+status)
+    svc_status $SVC
+    for php in ${PHP_VERS[@]}; do
+        svc_status system/${php}-fpm
+    done
+    ;;
+graceful|reload)
+    check_config || exit 1
+    svc_reload $SVC || ERROR=$?
+    for php in ${PHP_VERS[@]}; do
+        svc_reload system/${php}-fpm USR2 || ERROR=$?
+    done
+    ;;
+graceful-stop)
+    svc_exists $SVC || exit 1
+    svc_running $SVC || { echo "${SVC#*/} not running"; exit 1; }
+    echo "Gracefully stopping ${SVC#*/}"
+    sudo /bin/launchctl kill WINCH $SVC || ERROR=$?
+    ;;
+configtest|-t)
+    $HTTPD -t
+    ERROR=$?
+    ;;
+-v|-V)
+    $HTTPD $ACMD
+    ERROR=$?
+    ;;
+-h|--help)
+    echo "Usage: apachectl <action>"
+    echo "<action> one of:"
+    echo "  start      - start httpd,php-fpm"
+    echo "  stop       - stop httpd,php-fpm"
+    echo "  restart    - restart httpd,php-fpm"
+    echo "  status     - show if httpd,php-fpm are running"
+    echo "  reload     - trigger config reload of http,php-fpm"
+    echo "  configtest - check httpd configuration file"
+    ;;
+*)
+    echo "apachectl: The \"$ACMD\" option is not supported (-h for options)." 1>&2
+    ERROR=2
+    ;;
+esac
+
+exit $ERROR
+
