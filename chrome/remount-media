@@ -1,0 +1,24 @@
+#!/bin/bash
+
+VGNAME=$1
+[[ $VGNAME ]] || {
+  VGNAME=$(vgs --no-headings --reportformat json -o vg_name | jq -r '.report[].vg[].vg_name' | grep extdata | head -1)
+  [[ $VGNAME ]] || { echo "No extdata volume groups"; exit 1; }
+  echo "Re-activating volume group $VGNAME"
+}
+
+# kodi is bound to mount, so will shutdown
+umount /mnt/media
+umount /mnt/backup
+
+# shutdown crypt mount
+CRYPT=$(awk "/$VGNAME/ { print \$1; }"  /etc/crypttab)
+[[ $CRYPT ]] && cryptsetup close "$CRYPT"
+
+# re-activate vg
+vgchange -a n "$VGNAME"
+sleep 1
+vgchange -a y "$VGNAME"
+
+systemctl restart smartd
+
