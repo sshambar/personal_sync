@@ -1,10 +1,11 @@
 #!/bin/sh
 
-# finish-upgrade v1.10
+# finish-upgrade v1.11
 
 # Installs all extra packages, and fixes up things like admin_user dir
+# shellcheck shell=dash
 
-[ $(id -u) -ne 0 ] && echo "Run as root!" && exit 1
+[ "$(id -u)" -ne 0 ] && echo "Run as root!" && exit 1
 
 usage() {
   echo "Install selected packages previously configured"
@@ -12,7 +13,7 @@ usage() {
   echo "Usage: ${0} [ -d ] [ full ]"
   echo "  -h - Show this help and exit"
   echo "  -d - debug mode (dry-run)"
-  echo "  full - install all packages, even ones not configured before"
+  echo "  full - install extra packages, even ones not configured before"
   exit 0
 }
 
@@ -23,9 +24,9 @@ help() {
 
 full=
 
-while [[ $1 ]]; do
+while [ "$1" ]; do
   case "$1" in
-    -d) debug=echo;;
+    -d) debug="echo";;
     full) full=1;;
     -h|help) usage;;
     *) help "Unknown option '$1'";;
@@ -39,24 +40,41 @@ echo
 echo "Finishing upgrade...${debug:+DEBUG}"
 echo
 
+NET_RESTART=
+EXIT_MSGS=
+final_msgs() {
+   [ "$EXIT_MSGS" ] && echo "$EXIT_MSGS"
+   [ "$NET_RESTART" ] && echo "You will need to run 'service network restart'"
+}
+
+trap final_msgs EXIT
+
+add_msg() {
+  # shellcheck disable=SC3045
+  { read -r -d '' EXIT_MSGS || :; } <<EOF
+${EXIT_MSGS:+${EXIT_MSGS}
+}$*
+EOF
+}
+
 PKG_CORE=
 _pkgs_update() { # update if opkg lists missing or old
-  [[ $PKG_CORE ]] && return
-  [[ -f /etc/opkg/distfeeds.conf ]] || {
+  [ "$PKG_CORE" ] && return
+  [ -f /etc/opkg/distfeeds.conf ] || {
     echo "Missing opkg distfeeds.conf"; exit 1; }
 
   PKG_CORE=$(head -1 /etc/opkg/distfeeds.conf | awk '{ print $2 }')
 
-  if [[ -z $(find 2>/dev/null "/var/opkg-lists/$PKG_CORE" -mtime -1) ]]; then
-    $debug rm -f /var/opkg-lists/$PKG_CORE
+  if [ -z "$(find "/var/opkg-lists/$PKG_CORE" -mtime -1 2>/dev/null)" ]; then
+    $debug rm -f "/var/opkg-lists/$PKG_CORE"
     $debug opkg update
-    if [[ -f /var/opkg-lists/$PKG_CORE ]]; then
-      touch /var/opkg-lists/$PKG_CORE
+    if [ -f "/var/opkg-lists/$PKG_CORE" ]; then
+      touch "/var/opkg-lists/$PKG_CORE"
     else
       PKG_CORE=
     fi
   fi
-  [[ $PKG_CORE ]]
+  [ "$PKG_CORE" ]
 }
 
 is_installed() { # <name>
@@ -70,25 +88,29 @@ _install_pkg() { # <name>
 }
 
 install_pkgs() { # <name>...
-  while [[ $1 ]]; do
+  while [ "$1" ]; do
     _install_pkg "$1" || return
     shift
   done
 }
 
 _disable_pkg() { # <name>
+  local init_file app file
   is_installed "$1" || return 0
-  local init_file=$(opkg files "$1" | grep "^/etc/init.d/" | head -1)
-  [[ -z $init_file ]] && echo "Package $1 has no init.d file" && return 1
-  [ $("$init_file" status) == running ] && $debug "$init_file" stop
-  local app=${init_file##*/}
-  [ -h /etc/rc.d/S*$app ] || return 0
-  echo disabling $app
-  $debug "$init_file" disable
+  init_file=$(opkg files "$1" | grep "^/etc/init.d/" | head -1)
+  [ -z "$init_file" ] && echo "Package $1 has no init.d file" && return 1
+  [ "$("$init_file" status)" = running ] && $debug "$init_file" stop
+  app=${init_file##*/}
+  for file in /etc/rc.d/S*"$app"; do
+    [ -f "$file" ] || continue
+    echo disabling "$app"
+    $debug "$init_file" disable
+    break
+  done
 }
 
 disable_pkgs() { # <name>...
-  while [[ $1 ]]; do
+  while [ "$1" ]; do
     _disable_pkg "$1" || return
     shift
   done
@@ -96,32 +118,108 @@ disable_pkgs() { # <name>...
 
 disable_pkgs dnscrypt-proxy2 samba4-server wsdd2
 
-# core stuff
-install_pkgs diffutils bash
+# core stuff (sftp used by dropbear)
+install_pkgs diffutils bash openssh-sftp-server
 
-ADMIN_USER=
-[[ -r /etc/admin.user ]] && ADMIN_USER=$(cat /etc/admin.user)
-
-if [[ $ADMIN_USER ]] && grep -q ^${ADMIN_USER}: /etc/passwd; then
-  ADMIN_HOME=$(grep ^${ADMIN_USER}: /etc/passwd | awk -F: '{ print $6 }')
-  if [[ $ADMIN_HOME ]]; then
-    [[ -d $ADMIN_HOME ]] || $debug mkdir -p "$ADMIN_HOME"
-    if [[ -G $ADMIN_HOME ]]; then
-      echo "fixing $ADMIN_HOME"
-      $debug chgrp -R "$ADMIN_USER" "$ADMIN_HOME"
-    fi
-
-    install_pkgs shadow-su
+# uses $admin
+handle_homedir() { # <user> <source>
+  local user=$1 entry dir d
+  [ "$user" = "root" ] && return
+  entry=$(grep "^$user:" /etc/passwd || :)
+  [ "$entry" ] || {
+    add_msg "User $user needs to be created (from $2)"; return; }
+  dir=$(echo "$entry" | cut -d : -f 6 || :)
+  [ "$dir" ] || {
+    add_msg "User $user needs a home directory (from $2)"; return; }
+  [ -d "$dir" ] || {
+    $debug mkdir -p "$dir" || {
+      add_msg "Failed to create home for user '$user'"; return; }
+  }
+  # we don't want to chown any of these
+  for d in / /bin /dev /etc /lib /overlay /proc /rom /sbin \
+             /sys/ /tmp /var; do
+    [ "$d" = / ] && [ "$dir" != / ] && continue
+    [ "${dir#"$d"}" = "$dir" ] && [ "${dir#/usr"$d"}" = "$dir" ] && continue
+    add_msg "User '$user' has illegal home directory '$dir'"
+    return
+  done
+  [ -G "$dir" ] && {
+    $debug chgrp -R "$user" "$dir" || {
+      add_msg "User group needed for user '$user'"; return; }
+  }
+  if [ "$user" = "$admin" ]; then
+    # admin user (for remote ssh access) had home dir owned by root
+    [ -O "$dir" ] || $debug chown -R "root" "$dir"
+  else
+    [ -O "$dir" ] && $debug chown -R "$user" "$dir"
   fi
-fi
+}
 
-if [[ -s /etc/ssh/sshd_config ]]; then
+handle_users() {
+  [ -s /etc/ssh/sshd_config ] || return 0
+  local skip='' found='' admin='' user
+  [ -r /etc/admin.user ] && {
+    admin=$(cat /etc/admin.user)
+    install_pkgs shadow-su
+  }
+
+  # disable globbing (locally)
+  local -
+  set -f
+  # shellcheck disable=SC2013
+  for user in $(grep -i AllowUsers /etc/ssh/sshd_config); do
+    # skip first word
+    [ "$skip" ] || { skip=$user; continue; }
+    handle_homedir "$user" /etc/ssh/sshd_config
+
+    [ "$user" = "$admin" ] && found=1
+  done
+  [ "$found" ] || handle_homedir "$admin" /etc/admin.user
+}
+
+handle_users
+
+if [ -s /etc/ssh/sshd_config ]; then
   # install sshd only if we use it
   install_pkgs openssh-server
 fi
 
+# check for wireguard
+if ubus -S call uci get '{"config":"network"}' | jsonfilter -q -e '@.values.*.proto' | grep -q wireguard; then
+  if ! is_installed luci-proto-wireguard; then
+    install_pkgs luci-proto-wireguard
+    NET_RESTART=1
+  fi
+fi
+
+# check for dnsmasq-full
+if [ -f /etc/hotplug.d/iface/10-dnsmasq-dhcpv6 ]; then
+  if ! is_installed dnsmasq-full; then
+    # odhcpd conflicts with dnsmasq dhcpv6
+    disable_pkgs odhcpd-ipv6only
+    $debug rm -f /tmp/hosts/odhcpd
+
+    $debug rm -f /tmp/*.ipk
+    # this will download all uninstalled requirements
+    $debug opkg 2>/dev/null --noaction --cache /tmp install dnsmasq-full || :
+    for file in /tmp/dnsmasq-full*.ipk; do
+      [ -f "$file" ] || {
+        echo "Failed to download dnsmasq-full!";
+        $debug exit 1;
+      }
+      echo "Swapping dnsmasq for dnsmasq-full..."
+      is_installed dnsmasq && $debug opkg remove dnsmasq
+      $debug opkg --cache /tmp install dnsmasq-full
+      $debug rm -f /tmp/*.ipk
+      NET_RESTART=1
+      break
+    done
+  fi
+fi
+
+
 # check for homedns
-if [[ -f /etc/hotplug.d/iface/90-homedns ]]; then
+if [ -f /etc/hotplug.d/iface/90-homedns ]; then
   install_pkgs bind-client bind-dig curl ca-bundle
 fi
 
@@ -140,71 +238,73 @@ fi
 install_pkgs iperf3 || :
 
 # check for sqm
-if [[ -f /etc/config/sqm ]]; then
+if [ -f /etc/config/sqm ]; then
   install_pkgs luci-app-sqm
 fi
 
 # check for mwan3
-if [[ -f /etc/config/mwan3 ]]; then
+if [ -f /etc/config/mwan3 ]; then
   install_pkgs luci-app-mwan3
 fi
 
 # check for irqbalance
-if [[ -f /etc/config/irqbalance && -f /proc/interrupts ]] &&
+if [ -f /etc/config/irqbalance ] && [ -f /proc/interrupts ] &&
      grep -q CPU1 /proc/interrupts; then
   install_pkgs irqbalance
 fi
 
 # check for watchcat
-if [[ -f /etc/config/watchcat ]]; then
+if [ -f /etc/config/watchcat ]; then
   install_pkgs luci-app-watchcat
 fi
 
-if [[ -f /proc/mtd ]] && grep -q kernel2 /proc/mtd; then
+if [ -f /proc/mtd ] && grep -q kernel2 /proc/mtd; then
   install_pkgs luci-app-advanced-reboot
 fi
 
-if [[ -f /usr/sbin/media-mount ]]; then
+if [ -f /usr/sbin/media-mount ]; then
   install_pkgs kmod-fs-ext4 e2fsprogs block-mount cryptsetup \
                kmod-crypto-sha256 kmod-crypto-xts kmod-crypto-hmac \
                kmod-crypto-ecb
 fi
 
-if [[ -f /etc/screenrc ]]; then
+if [ -f /etc/screenrc ]; then
   install_pkgs screen
 fi
 
-if [[ -f /etc/ssh/ssh_config ]]; then
+if [ -f /etc/ssh/ssh_config ]; then
   install_pkgs openssh-client
 fi
 
-if [[ -f /etc/profile.d/console.sh ]]; then
+if [ -f /etc/profile.d/console.sh ]; then
   # could crawl /sys/bus/usb for idVendor=067b idProduct=2303, or just
   # use most likely driver
   install_pkgs kmod-usb-serial-pl2303
 fi
 
-if [[ -f /usr/bin/resize ]]; then
+if [ -f /usr/bin/resize ]; then
   install_pkgs coreutils-stty
 fi
 
 # regular packages
-if [[ $full ]]; then
+if [ "$full" ]; then
   # catchall if not already installed
   install_pkgs openssh-client || :
   install_pkgs openssh-server || :
   install_pkgs shadow-su || :
   install_pkgs lsof || :
   install_pkgs screen || :
-  install_pkgs haveged || :
   install_pkgs htop || :
   install_pkgs dmesg || :
-  install_pkgs luci-app-uhttpd || :
+  install_pkgs mtr || :
   install_pkgs luci-ssl || :
-  install_pkgs luci-app-sqm || :
-  if [[ -f /proc/interrupts ]] && grep -q CPU1 /proc/interrupts; then
+  if [ -f /proc/interrupts ] && grep -q CPU1 /proc/interrupts; then
     install_pkgs irqbalance
   fi
+  # big, adds UI for https certs
+  #install_pkgs luci-app-uhttpd || :
+  # big, only when required
+  #install_pkgs luci-app-sqm || :
 fi
 
 echo
