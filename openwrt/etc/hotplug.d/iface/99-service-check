@@ -1,0 +1,237 @@
+#!/bin/sh
+# -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
+# vim:set ft=sh et sw=2 ts=2:
+#
+# 99-service-check v0.6
+# Author: Scott Shambarger <devel@shambarger.net>
+#
+# Copyright (C) 2023 Scott Shambarger
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+# This script checks if any files in the target directories have changed
+# since the last run, optionally also validates them, and optionally removes
+# invalid files.  If any files have changed, and all pass validation,
+# an action may be taken.
+#
+# This script would normally be placed in /etc/hotplug.d/iface/##-<name>
+#
+# Default configuration filenames (and log tag) are based on <name> above.
+# eg: "99-service-check" uses config "/etc/service-check.conf"
+#
+# Commented example configuration below checks for new files in /tmp/dnsmasq.d,
+# validates updated files with dnsmasq, removes invalid files, and
+# restarts dnsmasq service if any have changed since last run.
+#
+# TODO: There is a race between checking files and touching the stamp file
+# or performing the action during which new (unchecked) files may appear.
+# Without tracking individual file times & checksums, this race in unavoidable.
+#
+# shellcheck shell=dash disable=SC3060
+
+# Set DEBUG for debug logging (DEBUG=2 to log to stdout)
+#DEBUG=1
+# Set TEST to log to stdout, use /var/tmp/test-<stamp-file> stamp file
+# (if STAMP_FILE set), and not take action or remove invalid files.
+#TEST=1
+
+_TAG=${script:-$0}; _TAG=${_TAG##*/}; _TAG=${_TAG#??-}
+
+# config overrides (optional)
+CONFIG="/etc/${_TAG}.conf"
+
+# --- begin default config
+
+# File used to track if any files have changed (unset to always check)
+STAMP_FILE="/var/tmp/${_TAG}.stamp"
+
+# Directory path to check for changes (':' separated)
+#TARGET_DIRS="/tmp/dnsmasq.d"
+TARGET_DIRS=
+
+# Set IGNORE_REMOVAL to not consider directory times (which will be
+# updated if files are removed).
+IGNORE_REMOVAL=
+
+# VALIDATE_CMD is evaluated for new files (unset to not validate),
+# If #FILE# is present, then a quoted filename is provided in it's place,
+# (ie, don't add quotes in the command).  If #FILE# isn't present,
+# the filename is appended to the command.
+#VALIDATE_CMD="dnsmasq --test -C #FILE#"
+VALIDATE_CMD=
+
+# Set FAILURE_CMD to run when any file fails VALIDATE_CMD.
+# If FAILURE_CMD succeeds, validation continues.
+# If FAILURE_CMD fails, then no further files are considered and
+# SERVICE_ACTION is not taken. As with VALIDATE_CMD, #FILE# is replaced with
+# quoted filename, but it's not appended if not present!
+#FAILURE_CMD="rm -f #FILE#"
+FAILURE_CMD=
+
+# Action to evaluate if files updated/removed and all checks passed
+# (unset to just check files)
+#SERVICE_ACTION="service dnsmasq restart"
+SERVICE_ACTION=
+
+# logging tag (empty for no tag)
+LOG_TAG=${_TAG}
+
+# ---- end default config
+
+# load any config overrides
+# shellcheck disable=SC1090
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+[ "$TEST" ] && {
+  [ "$STAMP_FILE" ] && STAMP_FILE="/var/tmp/test-${STAMP_FILE##*/}"
+}
+
+log() {
+  if [ "$TEST" ] || [ "$DEBUG" = 2 ]; then
+    echo "$*"
+  else
+    logger ${LOG_TAG:+-t "$LOG_TAG"} "$*"
+  fi
+}
+
+debug() { [ "$DEBUG" ] && log "DEBUG: $*"; }
+
+fail() {
+  log "FAILED: $*"
+  exit 1
+}
+
+touch_stamp() {
+  [ "$STAMP_FILE" ] || return
+  debug "Touching '$STAMP_FILE'"
+  touch "$STAMP_FILE" || fail "Unable to create '$STAMP_FILE'"
+}
+
+check_files() {
+  local f dir err qf cmd updated action='' failed='' found=''
+
+  local IFS=:
+  for dir in $TARGET_DIRS; do
+
+    debug "Checking for new files in '$dir'"
+    updated=
+    for f in "$dir"/*; do
+
+      # only interested in files (not directories or glob non-matches)
+      [ -f "$f" ] || continue
+
+      # busybox ash doesn't recognize sub-second mtime differences, so
+      # stamp needs to be "newer-than" file (anything in same second
+      # needs to be considered a change)
+      if [ ! -f "$STAMP_FILE" ] || [ ! "$STAMP_FILE" -nt "$f" ]; then
+
+        updated=1
+        log "File changed: '$f'"
+
+        if [ "$VALIDATE_CMD" ]; then
+
+          # quote filename so it can be used in eval
+          qf=${f//\'/\'\"\'\"\'}
+          cmd=${VALIDATE_CMD//#FILE#/\'"$qf"\'}
+          # append filename if not in cmd
+          [ "$cmd" = "$VALIDATE_CMD" ] && cmd="$cmd '$qf'"
+
+          # perform validation
+          debug "  Validation cmd: $cmd"
+
+          # shellcheck disable=SC2086
+          if err=$(eval 2>&1 $cmd); then
+            debug "    validated${err:+, output: $err}"
+          else
+
+            log "Failed validation: '$f'${err:+: $err}"
+
+            if [ "$FAILURE_CMD" ]; then
+
+              cmd=${FAILURE_CMD//#FILE#/\'"$qf"\'}
+              debug "  Failure cmd: $cmd"
+              [ "$TEST" ] || {
+                # shellcheck disable=SC2086
+                if err=$(eval 2>&1 $cmd); then
+                  log "Handled failure on '$f'${err:+: $err}"
+                else
+                  fail "'$cmd' failed${err:+: $err}"
+                fi
+              }
+            else
+              # track unhandled failure
+              failed=1
+            fi
+          fi
+        fi
+      else
+        debug " Unchanged: '$f'"
+      fi
+
+      # file found if exists after checks
+      [ -f "$f" ] && found=1
+    done
+
+    [ "$IGNORE_REMOVAL" ] || [ "$updated" ] || {
+      if [ -f "$STAMP_FILE" ]; then
+        if [ ! "$STAMP_FILE" -nt "$dir" ]; then
+          log "Directory changed: '$dir'"
+          updated=1
+        else
+          debug "Directory unchanged '$dir'"
+        fi
+      fi
+    }
+
+    [ "$updated" ] && action=1
+  done
+
+  [ "$failed" ] && {
+    [ "$SERVICE_ACTION" ] && fail "Not performing '$SERVICE_ACTION'"
+    fail "Not all files passed check"
+  }
+
+  # first run, files found, always take action
+  [ "$found" ] && [ ! -f "$STAMP_FILE" ] && action=1
+
+  if [ -f "$STAMP_FILE" ] && [ ! "$found" ]; then
+    # repeat run, no files, remove stamp
+    debug "Removing '$STAMP_FILE'"
+    rm -f "$STAMP_FILE"
+    [ "$IGNORE_REMOVAL" ] || action=1
+  elif [ "$action" ] && [ "$found" ]; then
+    # action with files, touch stamp
+    touch_stamp
+  fi
+
+  if [ "$action" ]; then
+    if [ "$SERVICE_ACTION" ]; then
+      log "Performing '$SERVICE_ACTION'"
+      # shellcheck disable=SC2086
+      [ "$TEST" ] || eval $SERVICE_ACTION
+    elif [ "$VALIDATE_CMD" ]; then
+      if [ "$found" ]; then
+        log "All new files passed check"
+      else
+        debug "All existing files removed"
+      fi
+    fi
+  else
+    debug "No new files found"
+  fi
+  return 0
+}
+
+check_files

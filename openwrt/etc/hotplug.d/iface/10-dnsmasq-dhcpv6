@@ -1,0 +1,296 @@
+#!/bin/sh
+# -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
+# vim:set ft=sh et sw=2 ts=2:
+#
+# iface-dnsmasq-dhcpv6 v0.6
+# Author: Scott Shambarger <devel@shambarger.net>
+#
+# Copyright (C) 2023 Scott Shambarger
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+# This script creates a drop-in config for dnsmasq only if installed with
+# the DHCPv6 feature (dnsmasq-full).  It's needed so that dhcpv6 options
+# need not be added to /etc/dnsmasq.conf where they would prevent dnsmasq
+# from starting after a firmware upgrade image that doesn't have dnsmaq
+# with DHCPv6 support.  The script also supports custom per-prefix options
+# based on the interface the prefix was delegated from.
+#
+# This script should be placed in /etc/hotplug.d/iface/##-<name>
+#
+# Default configuration and dropin filenames (and log tag) are
+# based on <name>, eg. "10-dnsmasq-dhcpv6" uses "/etc/dnsmasq-dhcpv6.conf",
+# and generates the dropin "/tmp/dnsmasq.d/dnsmasq-dhcpv6"
+#
+# NOTE: This script will only work if the DHCP Server on the $LAN
+#    interface is configured with "RA Service" disabled,
+#    (dhcp.<lan>.ra='disabled' or unset) - and checks.
+#
+# All config variables are optional (unless marked)
+#
+# shellcheck shell=dash disable=SC3060
+
+# Set DEBUG for debug logging (DEBUG=2 to log to stdout)
+#DEBUG=1
+# Set TEST to log to stdout, generate /var/tmp/test-<dropin-file>,
+# and not take action.
+#TEST=1
+
+_TAG=${script:-$0}; _TAG=${_TAG##*/}; _TAG=${_TAG#??-}
+
+# Config overrides (optional)
+CONFIG="/etc/${_TAG}.conf"
+
+# --- begin default config
+
+# Target interface (REQUIRED)
+LAN=lan
+
+# Dropin filename (REQUIRED)
+DROPIN="/tmp/dnsmasq.d/${_TAG}"
+
+# Static is always included.  All *STATIC variables have the following
+# replacements:
+#  #LANDEV# - $LAN interface device
+# Example:
+#  STATIC="
+#  ra-param=#LANDEV#,0,7200
+#  dhcp-option=option6:dns-server,[::2]
+#  dhcp-option=tag:lan,option6:dns-server,[fd65:4d88:71c9::1]
+#  dhcp-option=tag:lan,option6:domain-search,office.lan,home.lan
+#  "
+STATIC="
+ra-param=#LANDEV#,0,7200
+"
+
+# *_STATIC values will be used once the first time prefix type is seen,
+#   and have the same replacements as STATIC
+# *_PREFIX variables replace #PREFIX# for each matching prefix
+
+# ULA prefix
+ULA_STATIC=
+ULA_PREFIX="dhcp-range=#PREFIX#,slaac,1h"
+
+# Other prefixes
+OTHER_STATIC=
+OTHER_PREFIX="dhcp-range=set:lan,#PREFIX#1000,#PREFIX#ffff,1h"
+
+# For each interface in MATCH_INTERFACES, match any prefixes from
+# that interface, and apply <interface>_STATIC/<interface>_PREFIX, example:
+#   MATCH_INTERFACES="wgclient wan2"
+#   wgclient_STATIC="dhcp-option=tag:wg,option6:dns-server,[fddc:4858:b201::1]"
+#   wgclient_PREFIX="dhcp-range=tag:wg,#PREFIX#1000,#PREFIX#ffff,1h"
+#   wan2_STATIC=
+#   wan2_PREFIX="dhcp-range=set:wan,#PREFIX#1000,#PREFIX#ffff,1h"
+MATCH_INTERFACES=
+
+# dnsmasq executable (unset to not check for DHCPv6 feature)
+DNSMASQ_EXE="dnsmasq"
+
+# Checks network.$LAN.ra equals this value (unset to not check)
+RA_SETTING="disabled"
+
+# VALIDATE_CMD is evaluated for new files (unset to not validate),
+# If #FILE# is present, then a quoted filename is provided in it's place,
+# (ie, don't add quotes in the command).  If #FILE# isn't present,
+# the filename is appended to the command.
+VALIDATE_CMD="dnsmasq --test -C #FILE#"
+
+# Action to evaluate if dropin updated (unset to just generate dropin)
+SERVICE_ACTION="service dnsmasq restart"
+
+# Logging tag (empty for not tag)
+LOG_TAG=${_TAG}
+
+# ---- end default config
+
+# load any config overrides
+# shellcheck disable=SC1090
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+[ "$TEST" ] && {
+  DROPIN="/var/tmp/test-${DROPIN##*/}"
+  [ "$ACTION" ] || ACTION=ifup
+  [ "$INTERFACE" ] || INTERFACE=$LAN
+}
+
+log() {
+  if [ "$TEST" ] || [ "$DEBUG" = 2 ]; then
+    echo "$*"
+  else
+    logger ${LOG_TAG:+-t "$LOG_TAG"} "$*"
+  fi
+}
+
+debug() { [ "$DEBUG" ] && log "DEBUG: $*"; }
+
+fail() {
+  log "FAILED: $*"
+  exit 1
+}
+
+TMPFILE=
+cleanup() {
+  [ -f "$TMPFILE" ] && { debug "removing '$TMPFILE'"; rm -f "$TMPFILE"; }
+}
+
+trap cleanup EXIT
+
+check_config() {
+  local dnsf ra
+
+  [ "$DNSMASQ_EXE" ] && {
+    debug "checking '$DNSMASQ_EXE' has the DHCPv6 feature"
+    dnsf=$("$DNSMASQ_EXE" --version | grep -m1 'Compile time options:' |
+             cut -d: -f2)
+    [ "${dnsf#* DHCPv6 }" = "$dnsf" ] &&
+      fail "'$DNSMASQ_EXE' with DHCPv6 is required"
+  }
+
+  [ "$RA_SETTING" ] && {
+    # check that we won't create a conflict
+    ra=$(ubus -S call uci get \
+              '{"config":"network", "section":"'"$LAN"'", "option":"ra" }' |
+           jsonfilter -q -e "@.value")
+    [ "${ra:-disabled}" = "$RA_SETTING" ] ||
+      fail "network.$LAN.ra must be '$RA_SETTING'"
+  }
+}
+
+activate_dropin() {
+  local err qf cmd
+
+  debug "checking if '$DROPIN' and '$TMPFILE' differ"
+  [ -f "$DROPIN" ] && cmp -s "$DROPIN" "$TMPFILE" && return
+
+  [ "$VALIDATE_CMD" ] && {
+    qf=${TMPFILE//\'/\'\"\'\"\'}
+    cmd=${VALIDATE_CMD//#FILE#/\'"$qf"\'}
+    # append filename if not in cmd
+    [ "$cmd" = "$VALIDATE_CMD" ] && cmd="$cmd '$qf'"
+
+    debug "validation cmd: '$cmd'"
+
+    # shellcheck disable=SC2086
+    if err=$(eval 2>&1 $cmd); then
+      debug "  validated${err:+, output: $err}"
+    else
+      fail "Generated dropin failed validation${err:+: $err}"
+    fi
+  }
+
+  debug "moving '$TMPFILE' to '$DROPIN'"
+  mv "$TMPFILE" "$DROPIN" || fail "Unable to move '$TMPFILE' to '$DROPIN'"
+  log "Created new dropin '$DROPIN'"
+
+  [ "$SERVICE_ACTION" ] && {
+    log "Performing '$SERVICE_ACTION'"
+    # shellcheck disable=SC2086
+    [ "$TEST" ] || eval $SERVICE_ACTION
+  }
+}
+
+# appends to $TMPFILE (creates it if needed)
+addc() {
+  [ "$TMPFILE" ] || {
+    [ "$DROPIN" ] || fail "DROPIN not set"
+    TMPFILE=$(mktemp -t -q "${DROPIN##*/}".XXXXXX)
+    [ -f "$TMPFILE" ] || fail "Unable to create tmpfile"
+    debug "Created tmpfile '$TMPFILE'"
+    echo "# file auto-generated by ${script:-$0}" >> "$TMPFILE"
+  }
+  debug "adding line: $*"
+  echo "$*" >> "$TMPFILE"
+}
+
+# uses $landev and $prefix
+add_entry() { # <static> [ <prefix> ]
+  local static=${1//#LANDEV#/$landev} range=${2//#PREFIX#/$prefix}
+  [ "$static" ] && addc "$static"
+  [ "$range" ] && addc "$range"
+}
+
+write_dropin() {
+  local landev ula iface p ps pp
+
+  landev=$(ifstatus "$LAN" | jsonfilter -q -e '@.l3_device')
+  [ "$landev" ] || fail "Unable to find device for LAN interface '$LAN'"
+  debug "found LAN device '$landev'"
+
+  ula=$(ubus -S call uci get '{"config":"network", "section":"globals",'\
+'"option":"ula_prefix"}' | jsonfilter -q -e '@.value')
+  ula=${ula%/*}
+  [ "$ula" ] && debug "find ULA prefix '$ula'"
+
+  # handle interface matches
+  for iface in $MATCH_INTERFACES; do
+    debug "checking match-interface '$iface'"
+    ps=$(ifstatus "$iface" | jsonfilter -q -e '@["ipv6-prefix"][*].address')
+    [ "$ps" ] || continue
+    debug "  found prefixes: '$ps'"
+    eval "${iface}_PREFIXES=\"$ps\""
+  done
+
+  add_entry "$STATIC"
+
+  local prefix
+  for prefix in $(ifstatus "$LAN" | jsonfilter -q -e '@["ipv6-prefix-assignment"][*].address'); do
+
+    debug "handling delegated prefix '$prefix'"
+    for iface in $MATCH_INTERFACES; do
+      eval "ps=\"\${${iface}_PREFIXES}\""
+      for p in $ps; do
+        [ "$prefix" = "$p" ] || continue
+        debug "  matched prefix from interface '$iface'"
+        eval "ps=\"\${${iface}_STATIC}\""
+        eval "pp=\"\${${iface}_PREFIX}\""
+        add_entry "$ps" "$pp"
+        eval "${iface}_STATIC="
+        # next prefix
+        continue 3
+      done
+    done
+
+    if [ "$prefix" = "$ula" ]; then
+      debug "  matched ULA prefix"
+      add_entry "$ULA_STATIC" "$ULA_PREFIX"
+      ULA_STATIC=
+    else
+      debug "  'OTHER' prefix"
+      add_entry "$OTHER_STATIC" "$OTHER_PREFIX"
+      OTHER_STATIC=
+    fi
+  done
+}
+
+update_dropin() {
+  check_config
+  write_dropin
+  activate_dropin
+}
+
+case "$ACTION" in
+  ifup|ifupdate)
+    if [ "$INTERFACE" = "$LAN" ]; then
+      debug "Handling INTERFACE='$LAN' ACTION='$ACTION'"
+      update_dropin
+    elif [ "$(ifstatus "$INTERFACE" | jsonfilter -q -e '@["ipv6-prefix"][*].address')" ]; then
+      # iface has a delegated prefix
+      debug "Handling INTERFACE='$INTERFACE' ACTION='$ACTION': prefixes found"
+      update_dropin
+    fi
+    ;;
+esac
+:

@@ -1,0 +1,50 @@
+#!/bin/sh
+
+# Watch for "down" events on interface, and if it's flagged from rc.local
+# for watching, then attempt to reset it.
+
+[ "$INTERFACE" ] || exit 0
+[ "$ACTION" ] || exit 0
+
+log() {
+  logger -t watch-lan "$*"
+}
+
+fail() {
+  log "$*"
+  exit
+}
+
+[ "$ACTION" = ifdown ] || exit 0
+[ -f "/etc/WATCH-$INTERFACE" ] || exit 0
+
+log "Interface $INTERFACE went down, attempting to reset it"
+
+# get device for interface
+DEV=$(ubus -S call "network.interface.$INTERFACE" status | jsonfilter -q -e '@.device')
+[ "$DEV" ] || { log "Interface $INTERFACE has no device!"; exit; }
+
+# check if device has a parent
+PARENT=$(ubus -S call "network.device" status "{\"name\":\"$DEV\"}" | jsonfilter -q -e '@.parent')
+[ "$PARENT" ] && DEV=$PARENT
+
+# validate link is still down
+if ip link show dev "$DEV" | grep -q LOWER_UP; then
+  fail "Link went down, but already back up..."
+fi
+
+# device needs to be "kicked" to fix carrier-loss
+ip link set "$DEV" down
+
+sleep 15
+ip link set "$DEV" up
+
+sleep 5
+if ip link show dev "$DEV" | grep -q LOWER_UP; then
+  log "Link $DEV reset successful"
+else
+  log "Link $DEV still down"
+fi
+
+exit 0
+
