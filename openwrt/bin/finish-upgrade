@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.11
+# finish-upgrade v1.13
 
 # Installs all extra packages, and fixes up things like admin_user dir
 # shellcheck shell=dash
@@ -244,7 +244,7 @@ fi
 
 # check for mwan3
 if [ -f /etc/config/mwan3 ]; then
-  install_pkgs luci-app-mwan3
+  install_pkgs luci-app-mwan3 iptables-nft ip6tables-nft
 fi
 
 # check for irqbalance
@@ -294,6 +294,9 @@ if [ "$full" ]; then
   install_pkgs shadow-su || :
   install_pkgs lsof || :
   install_pkgs screen || :
+  # for better entropy (/proc/sys/kernel/random/entropy_avail < 1000)
+  # not really needed for 5.10+
+  #install_pkgs haveged || :
   install_pkgs htop || :
   install_pkgs dmesg || :
   install_pkgs mtr || :
@@ -305,6 +308,7 @@ if [ "$full" ]; then
   #install_pkgs luci-app-uhttpd || :
   # big, only when required
   #install_pkgs luci-app-sqm || :
+  install_pkgs ip-tiny || :
 fi
 
 echo
