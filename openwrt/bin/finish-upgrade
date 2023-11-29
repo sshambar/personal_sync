@@ -1,8 +1,10 @@
 #!/bin/sh
 
-# finish-upgrade v1.13
+# finish-upgrade v1.14
 
 # Installs all extra packages, and fixes up things like admin_user dir
+# Useful starting build includes: diffutils bash openssh-sftp-server
+#    tcpdump-mini procps-ng-ps less irqbalance coreutils-stty iperf3
 # shellcheck shell=dash
 
 [ "$(id -u)" -ne 0 ] && echo "Run as root!" && exit 1
