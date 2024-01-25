@@ -1,10 +1,10 @@
 #!/bin/sh
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# set-ddns v0.9 DDNS update script
+# set-ddns v1.0 DDNS update script
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright 2020-23 Scott Shambarger.  All rights reserved.
+# Copyright 2020-24 Scott Shambarger.  All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@
 #   DDNS_SERVER - name server to query/update
 #   DDNS_SERVER_FALLBACK - fallback DNS ip address
 #   REMOTE_URL - url to query our apparent public ip
+#   FORCE - non-empty to force update correct DNS records (testing)
 #
 # Install location:
 #   DD-WRT: /opt/etc/config/ddns.wanup
@@ -44,7 +45,7 @@ CONFIG=${DDNS_CONFIG:-/etc/ddns.conf}
 OPTCONFIG="/opt/etc/ddns.conf"
 DDNS_SERVER="shambarger.net"
 DDNS_SERVER_FALLBACK="104.59.218.49"
-REMOTE_URL="http://shambarger.net/remoteip"
+REMOTE_URL="http://www.shambarger.net/remoteip"
 
 # path for optware
 [ -d "/opt/bin" ] && export PATH=/opt/bin:/opt/sbin:/opt/usr/sbin:${PATH}
@@ -98,11 +99,11 @@ fi
 # check for duplicate runs
 if [ -n "$DNS4" ]; then
   STAMP=$(find "$STAMPFILE" -mmin 1 2>/dev/null)
-  [ -n "$STAMP" ] && DNS4=
+  [ -n "$STAMP" ] && [ -z "$FORCE" ] && DNS4=
 fi
 if [ -n "$DNS6" ]; then
   STAMP=$(find "$STAMPFILE6" -mmin 1 2>/dev/null)
-  [ -n "$STAMP" ] && DNS6=
+  [ -n "$STAMP" ] && [ -z "$FORCE" ] && DNS6=
 fi
 [ -n "$DNS4" -o -n "$DNS6" ] || exit 0
 
@@ -177,7 +178,7 @@ if [ -n "$DNS4" ]; then
     err "Unable to lookup $DDNS_NAME"
   elif [ "$wan_ip" = "$curr_ip" ]; then
     log "DNS address correct as $curr_ip"
-    wan_ip=
+    [ -z "$FORCE" ] && wan_ip=
   fi
 
   if [ -n "$wan_ip" ]; then
@@ -218,7 +219,7 @@ if [ -z "$curr_ip" ]; then
   err "Unable to lookup $DDNS_NAME"
 elif [ "$wan_ip" = "$curr_ip" ]; then
   log "DNS address correct as $curr_ip"
-  wan_ip=
+  [ -z "$FORCE" ] && wan_ip=
 fi
 
 if [ -n "$wan_ip" ]; then
