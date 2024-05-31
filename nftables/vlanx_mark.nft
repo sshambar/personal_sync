@@ -1,0 +1,99 @@
+#
+# Add conntrack marks to incoming and outgoing connections, and restore
+# marks for existing connections so routing rules can use it to
+# override default routes.
+#
+
+add table inet vlanx_mark
+delete table inet vlanx_mark
+
+# Uncomment to add trace on icmp packets
+#include "/etc/nftables/vlanx_trace.nft"
+
+# mark is 0x10
+define LAN = "vlan1"
+# mark is 0x20
+define WAN1 = "vlan3"
+# mark is 0x30
+define WAN2 = "vlan4"
+
+table inet vlanx_mark {
+
+   set mark_interfaces {
+     type ifname
+     elements = { $LAN, $WAN1, $WAN2 }
+  }
+
+  chain flag_nat {
+    # ct-mark 0x40 used for nat in POSTROUTING
+    ct mark set ct mark & 0xffffffbf | 0x40
+  }
+
+  # if connection is already bound to an address that mis-matches where
+  # the ct-mark is sending it, flag for nat
+  chain check_mark {
+    ct mark and 0x30 == 0x10 oifname != $LAN counter jump flag_nat
+    ct mark and 0x30 == 0x20 oifname != $WAN1 counter jump flag_nat
+    ct mark and 0x30 == 0x30 oifname != $WAN2 counter jump flag_nat
+  }
+
+  # nft can't restore masked ct mark -> mark, so do it bit-by-bit
+  chain restore_mark {
+    ct mark 0 return
+    ct mark and 0x10 == 0x10 meta mark set mark or 0x10
+    ct mark and 0x20 == 0x20 meta mark set mark or 0x20
+  }
+
+  # mark based on iifname
+  chain new_PREROUTING_policy {
+    iifname $LAN counter mark set mark and 0xffffff0f xor 0x10
+    iifname $WAN1 counter mark set mark and 0xffffff0f xor 0x20
+    iifname $WAN2 counter mark set mark and 0xffffff0f xor 0x30
+    ct mark set mark and 0x30
+  }
+  # mark on incoming connections (ip rules guide return path)
+  chain new_PREROUTING {
+    # allow override of ct-mark in vlanx_trace
+    jump restore_mark
+    mark and 0x30 == 0 jump new_PREROUTING_policy
+  }
+  chain mark_PREROUTING {
+    ct state new counter jump new_PREROUTING
+    ct state established,related jump restore_mark
+  }
+  chain mangle_PREROUTING {
+    type filter hook prerouting priority mangle - 20; policy accept;
+    iifname @mark_interfaces jump mark_PREROUTING
+    # this covers both incoming and forwarded connections
+    oifname @mark_interfaces ct state new jump check_mark
+  }
+
+  # mark based on oifname
+  chain new_OUTPUT_policy {
+    oifname $LAN counter mark set mark and 0xffffff0f xor 0x10
+    oifname $WAN1 counter mark set mark and 0xffffff0f xor 0x20
+    oifname $WAN2 counter mark set mark and 0xffffff0f xor 0x30
+    ct mark set mark and 0x30
+  }
+  # mark new outgoing connections (stability)
+  chain new_OUTPUT {
+    # allow override in vlanx_trace
+    jump restore_mark
+    mark and 0x30 == 0 jump new_OUTPUT_policy
+    jump check_mark
+  }
+  chain mark_OUTPUT {
+    ct state new jump new_OUTPUT
+    ct state established,related jump restore_mark
+  }
+  chain mangle_OUPUT {
+    type route hook output priority mangle - 20; policy accept;
+    oifname @mark_interfaces jump mark_OUTPUT
+  }
+
+  chain PORTROUTING {
+    type nat hook postrouting priority srcnat; policy accept;
+    # anything flagged in check_mark gets nat'd
+    oifname @mark_interfaces ct mark and 0x40 == 0x40 masquerade
+  }
+}

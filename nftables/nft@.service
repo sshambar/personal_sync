@@ -1,0 +1,17 @@
+[Unit]
+Description=Netfilter Tables for %I
+Documentation=man:nft(8)
+Wants=network-pre.target
+Before=network-pre.target
+
+[Service]
+Type=oneshot
+ProtectSystem=full
+ProtectHome=true
+ExecStart=/sbin/nft -f '/etc/nftables/%I.nft'
+ExecReload=/sbin/nft 'delete table inet %I; include "/etc/nftables/%I.nft";'
+ExecStop=/sbin/nft 'delete table inet %I'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

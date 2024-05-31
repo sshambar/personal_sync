@@ -1,0 +1,55 @@
+#
+# Adds tracing for icmp packets to debug issues with vlanx_mark.nft
+# connection marking
+#
+
+add table inet vlanx_trace
+delete table inet vlanx_trace
+table inet vlanx_trace {
+
+  # used to test marking new incoming connections with specific mark
+  chain PRE_override {
+    #meta nfproto ipv6 tcp dport 80 ct mark set 0x10
+  }
+
+  # used to test marking new outgoing connections with specific mark
+  chain OUT_override {
+    #tcp dport 5201 ct mark set 0x10
+    #meta nfproto ipv6 tcp dport 80 ct mark set 0x10
+  }
+
+  # used to trace incoming packets
+  chain PRE_trace {
+    #icmpv6 type { echo-request, echo-reply } nftrace set 1
+    #icmp type { echo-request, echo-reply } nftrace set 1
+    #tcp sport 5201 nftrace set 1
+  }
+  # used to trace outgoing packets
+  chain OUT_trace {
+    #icmpv6 type { echo-request, echo-reply } nftrace set 1
+    #icmp type { echo-request, echo-reply } nftrace set 1
+    #meta nfproto ipv6 tcp dport 80 nftrace set 1
+    #tcp dport 5201 nftrace set 1
+  }
+
+  # trace actions in vlanx_mark (priority mangle - 20)
+  chain mangle_PREROUTING {
+    type filter hook prerouting priority mangle - 30; policy accept;
+    jump PRE_trace
+    ct state new jump PRE_override
+  }
+  chain mangle_PRE_notrace {
+    type filter hook prerouting priority mangle - 10; policy accept;
+    nftrace set 0
+  }
+
+  chain mangle_OUPUT {
+    type route hook output priority mangle - 30; policy accept;
+    jump OUT_trace
+    ct state new jump OUT_override
+  }
+  chain mangle_OUT_notrace {
+    type route hook output priority mangle - 10; policy accept;
+    nftrace set 0
+  }
+}
