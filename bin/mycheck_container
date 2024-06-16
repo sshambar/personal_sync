@@ -1,0 +1,123 @@
+#!/bin/bash
+
+# mycheck_container v0.5
+# Author: Scott Shambarger <devel@shambarger.net>
+#
+# Copyright (C) Scott Shambarger
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Script to check if docker/podman container(s) running
+# Uses tag files:
+#  - to track failed state: failed tag contains date first failure seen
+#  - in failed state, repeated failure messages are suppressed
+#  - tag files are touched each time service is checked (last checked)
+#  - if service found running again, tag file is reset to empty
+
+SVC=docker
+ALT_SVC=podman
+
+TAG_DIR="/tmp/mycheck"
+
+die() { echo "$*"; exit 1; }
+
+usage() {
+  [[ $1 ]] && echo "Error: $*"
+  echo "Usage: ${0##*/} [ <options> ] <container-name>..."
+  echo "<options>:"
+  echo "  -d debug output"
+  echo "  -h show this help"
+  echo "  -r reset tag files"
+  echo "  -s <service> (default: $SVC${ALT_SVC+ or $ALT_SVC})"
+  echo "  -t <tag-directory> (default: $TAG_DIR)"
+  [[ $1 ]] && exit 1
+}
+
+FOUND=
+RC=0
+DEBUG=
+RESET=
+
+debug() { [[ $DEBUG ]] && echo "$*"; }
+
+tag_name() { echo "${TAG_DIR}/${SVC}${1:+.$1}"; }
+
+tag_fail() { # <container> <msg>
+  local n; n=$(tag_name "$1")
+  RC=1
+  [[ $RESET ]] && rm -f "$n"
+  # don't repeat fail messages
+  [[ -s "$n" ]] && { touch "$n"; return 0; }
+  [[ $2 ]] && echo "$2"
+
+  debug "Tag ${1:-$SVC} fail"
+  echo "First failed on $(date)" > "$n"
+  return 1
+}
+
+tag_ok() { # <container>
+  local n; n=$(tag_name "$1")
+  debug "Tag ${1:-$SVC} ok"
+  echo -n > "$n"
+}
+
+SVC_CHECKED=
+check_svc() {
+  [[ $SVC_CHECKED ]] && return $SVC_CHECKED
+
+  [[ -d "$TAG_DIR" ]] || mkdir -p "$TAG_DIR"
+  [[ -d "$TAG_DIR" ]] || die "Unable to create tracking directory $TAG_DIR"
+
+  command -v >/dev/null "$SVC" || {
+    [[ $ALT_SVC ]] && command -v >/dev/null "$ALT_SVC" && SVC=$ALT_SVC
+  }
+
+  debug "Checking if $SVC available"
+
+  SVC_CHECKED=1
+  if command -v >/dev/null "$SVC"; then
+    local out
+    if out=$("$SVC" info 2>&1); then
+      tag_ok
+      SVC_CHECKED=0
+    else
+      tag_fail "" "$SVC isn't running!" || {
+        # show details of error
+        echo "$out"
+      }
+    fi
+  else
+    tag_fail "" "$SVC command not found!"
+  fi
+  return $SVC_CHECKED
+}
+
+check_container() { # <name>
+  FOUND=1
+  # check service
+  check_svc || return
+  # check container
+  debug "Checking container $1"
+  if [[ $("$SVC" ps -q -f "name=^$1$" 2>/dev/null) ]]; then
+    tag_ok "$1"
+  else
+    tag_fail "$1" "$SVC container $1 not running!"
+  fi
+}
+
+while [[ "$1" ]]; do
+  case "$1" in
+    -d) DEBUG=1;;
+    -r) RESET=1;;
+    --help|-h) usage; exit 0;;
+    -s) [[ $2 ]] || usage "-s requires arg"
+        SVC=$2; shift;;
+    -t) [[ $2 ]] || usage "-t requires arg"
+        TAG_DIR=$2; shift;;
+    *) check_container "$1";;
+  esac
+  shift
+done
+
+[[ $FOUND ]] || usage "<container-name> required"
+
+exit $RC
