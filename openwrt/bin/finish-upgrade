@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.14
+# finish-upgrade v1.15
 
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
@@ -191,6 +191,16 @@ if ubus -S call uci get '{"config":"network"}' | jsonfilter -q -e '@.values.*.pr
   if ! is_installed luci-proto-wireguard; then
     install_pkgs luci-proto-wireguard
     NET_RESTART=1
+  fi
+fi
+
+# workaround bug https://github.com/openwrt/openwrt/issues/13777
+if grep -q route6 /etc/config/network; then
+  if ! is_installed ip-full; then
+    if ! is_installed ip-tiny; then
+      install_pkgs ip-tiny
+      NET_RESTART=1
+    fi
   fi
 fi
 
