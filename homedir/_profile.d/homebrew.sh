@@ -1,5 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
+#
+# homebrew.sh v1.0 - defines used with homebrew install
 
 [[ -t 0 ]] || return 0
 
@@ -20,4 +22,4 @@ export PKG_CONFIG_PATH
 add_path ACLOCAL_PATH "${HOMEBREW_PREFIX}/share/aclocal"
 export ACLOCAL_PATH
 
-export DOCKER_HOST='unix:///Users/scott/.local/share/containers/podman/machine/qemu/podman.sock'
+export "DOCKER_HOST=unix://${TMPDIR}podman/podman-machine-default-api.sock"
