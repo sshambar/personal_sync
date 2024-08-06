@@ -1,13 +1,15 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# mac.sh - local defines for OSX
+# mac.sh v1.0 - local defines for OSX
 
 # utf8 baby
 export LANG=en_US.UTF-8
 
 # macports....
 add_root_path /opt/local/ before
+# add homebrew...
+add_root_path /usr/local/ before
 
 # Rest for interactive terminals only
 [[ -t 0 ]] || return 0
@@ -22,14 +24,18 @@ add_path PATH /usr/sbin
 add_path PATH /usr/local/sbin
 add_path PATH /opt/local/sbin
 
-# order these early
-add_path PATH /usr/local/bin before
-add_path PATH ~/.bin before
+# order local first
+add_path PATH ~/.local/bin before
+add_path MANPATH ~/.local/share/man before
+
+# X11 man pages
+add_path MANPATH /opt/X11/share/man
 
 # developer man pages
 add_path MANPATH /Applications/Xcode.app/Contents/Developer/usr/share/man
 add_path MANPATH /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/share/man
-add_path MANPATH /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/share/man
+# add back if need function help
+#add_path MANPATH /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/share/man
 export MANPATH
 
 # macports emacs
