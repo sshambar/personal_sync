@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# emacs.sh - setup emacs aliases if we have the correct environment
+# emacs.sh v1.0 - setup emacs aliases if we have the correct environment
 #
 # Requires the following in ~/.emacs (or home-start.el)
 #
@@ -11,15 +11,19 @@
 #  (setq server-name (getenv-internal "MYEC_SERVER_NAME"))
 #  (server-start)
 
-command -v ediff &>/dev/null && export MERGE=ediff
-
 # Skip all for noninteractive shells.
 [[ -t 0 ]] || return 0
 
 setup_emacs() {
 
+  command -v emacs &>/dev/null || return 0
+
+  export EDITOR=${EDITOR:-emacs}
+
+  command -v ediff &>/dev/null && export MERGE=${MERGE:-ediff}
+
   # fallback pager
-  [[ $INSIDE_EMACS ]] && export PAGER="/bin/cat"
+  [[ $INSIDE_EMACS ]] && export PAGER=cat
 
   command -v emacsclient &>/dev/null || return 0
 
