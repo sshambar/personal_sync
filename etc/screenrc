@@ -4,6 +4,8 @@ escape ^P^P
 # no utmp
 deflogin off
 
+defutf8
+
 # Ugh, annoying
 startup_message off
 
@@ -54,7 +56,7 @@ termcapinfo xterm|xterm-* 'hs:ts=\E]2;:fs=\007:ds=\E]2;screen\007'
 termcapinfo   xterm|xterm-* 'XC=K%,%\E(B,[\304,\\\\\326,]\334,{\344,|\366,}\374,~\337'
 
 #
-# vt100/linux
+# vt100
 #
 
 #the vt100 description does not mention "dl". *sigh*
@@ -63,7 +65,6 @@ termcapinfo vt100 dl=5\E[M
 # Extend the vt100 desciption by some sequences.
 termcap  vt100* ms:AL=\E[%dL:DL=\E[%dM:UP=\E[%dA:DO=\E[%dB:LE=\E[%dD:RI=\E[%dC
 terminfo vt100* ms:AL=\E[%p1%dL:DL=\E[%p1%dM:UP=\E[%p1%dA:DO=\E[%p1%dB:LE=\E[%p1%dD:RI=\E[%p1%dC
-termcapinfo linux C8
 
 # altscreen on all terminals
 altscreen on
@@ -76,9 +77,3 @@ nethack on
 # status line
 msgwait 3
 hardstatus string 'screen %n%?: %t%?%? - %h%?'
-
-# Color!
-term screen-256color
-
-#shell /opt/local/bin/bash
-
