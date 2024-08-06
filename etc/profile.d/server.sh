@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# server.sh - server specific defines
+# server.sh v1.0 - linux server specific defines
 
 # Skip all for noninteractive shells.
 [[ -t 0 ]] || return 0
@@ -28,7 +28,7 @@ else
     [[ $uid && $gid ]] || { echo "Invalid user '$1'"; return 2; }
     shift
     [[ $1 ]] || set bash
-    setpriv --reset-env --no-new-privs --reuid=$uid --regid=$gid \
+    setpriv --reset-env --reuid=$uid --regid=$gid \
             --init-groups env XDG_RUNTIME_DIR="/run/user/$uid" "$@"
   }
 
