@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# emacs.sh v1.0 - setup emacs aliases if we have the correct environment
+# emacs.sh v1.1 - setup emacs aliases if we have the correct environment
 #
 # Requires the following in ~/.emacs (or home-start.el)
 #
@@ -30,9 +30,13 @@ setup_emacs() {
   # shell inside emacs, and server alive...
   if [[ $INSIDE_EMACS ]] &&
        emacsclient -s "$MYEC_SERVER_NAME" -e t &>/dev/null; then
-
+    local s
+    # try to use full socket path so EDITOR works in "sanitized" environments
+    s=$(emacsclient -s "$MYEC_SERVER_NAME" -e "(eval 'server-socket-dir)")
+    s=${s#\"}; s=${s%\"}; s="$s/$MYEC_SERVER_NAME"
+    [[ -S $s ]] || s=$MYEC_SERVER_NAME
     # EDITOR should block inside emacs
-    export EDITOR="emacsclient -s $MYEC_SERVER_NAME"
+    export EDITOR="emacsclient -s \"$s\""
     # remove VISUAL, it may mask EDITOR
     unset VISUAL
 
