@@ -36,7 +36,7 @@ setup_emacs() {
     s=${s#\"}; s=${s%\"}; s="$s/$MYEC_SERVER_NAME"
     [[ -S $s ]] || s=$MYEC_SERVER_NAME
     # EDITOR should block inside emacs
-    export EDITOR="emacsclient -s \"$s\""
+    export EDITOR="emacsclient -s $s"
     # remove VISUAL, it may mask EDITOR
     unset VISUAL
 
