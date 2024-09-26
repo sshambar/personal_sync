@@ -2,8 +2,10 @@
 
 ;; PREFIX myhome- used for hooks.
 
-;; Copy/link to /usr/local/share/emacs/site-lisp/site-start.d
-;;  (or /etc/emacs/site-start.d/99home-start.el)
+;; Copy to /etc/emacs, add the following file
+;; /usr/share/emacs/site-lisp/site-start.d/etc-emacs.el
+;;   (mapc 'load (delete-dups (mapcar 'file-name-sans-extension
+;;          (directory-files "/etc/emacs" t "\\.elc?\\'"))))
 ;;
 ;; Identify what parts of your `.emacs' take so long. You can do
 ;; this e.g. by starting emacs with "emacs -q", set up your
@@ -37,9 +39,6 @@
          (concat user-emacs-directory "lisp")))
     (when (file-directory-p my-directory)
       (add-to-list 'load-path my-directory))))
-
-(when (file-directory-p "/usr/local/share/emacs/site-lisp")
-  (add-to-list 'load-path "/usr/local/share/emacs/site-lisp"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Try Require
@@ -125,7 +124,6 @@ of an error, just add the package to a list of missing packages."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Features
 
-;; (setq display-time-mail-file t)
 (setq line-number-mode t)
 (setq mumamo-chunk-coloring 10)
 ;; don't add newlines to end of buffer when scrolling
@@ -151,14 +149,14 @@ of an error, just add the package to a list of missing packages."
  (define-key help-map (kbd "A") 'apropos-variable))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Time
+;; Time (disabled as updates send packets which kill sleeping network in VM)
 
 ;; (setq display-time-form-list (quote (date time)))
-(if (fboundp 'display-time)
-    (progn
-      (setq display-time-string-forms '(12-hours ":" minutes am-pm))
-      (display-time)
-      ))
+;;(if (fboundp 'display-time)
+;;    (progn
+;;      (setq display-time-string-forms '(12-hours ":" minutes am-pm))
+;;      (display-time)
+;;      ))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Added Functions
@@ -437,8 +435,8 @@ of an error, just add the package to a list of missing packages."
 ;; Default Theme
 
 (if (and (boundp 'custom-theme-load-path)
-         (file-readable-p "/usr/local/share/emacs/site-lisp/themes/home-dark-theme.el"))
-    (progn (add-to-list 'custom-theme-load-path "/usr/local/share/emacs/site-lisp/themes")
+         (file-readable-p "/etc/emacs/themes/home-dark-theme.el"))
+    (progn (add-to-list 'custom-theme-load-path "/etc/emacs/themes")
            (load-theme 'home-dark t))
   ;; fallback
   (custom-set-faces
