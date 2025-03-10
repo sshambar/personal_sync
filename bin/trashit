@@ -1,0 +1,267 @@
+#!/bin/bash
+# -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Copyright (C) 2025 Scott Shambarger
+#
+# trashit v1.0.1 - Index and search messages in Maildirs to trash/delete
+# Author: Scott Shambarger <devel@shambarger.net>
+#
+
+die() { echo >&2 "$*"; exit 1; }
+
+USEDB=
+command >/dev/null -v doveadm || USEDB=1
+
+usage() {
+  echo "Trash messages matching patterns"
+  echo "trashit ${USEDB:+[ rebuild ] }<option>"
+  echo "<options> are:"
+  echo "  -t address - match Delivered-To (address@...)"
+  echo "  -f string - match part of From"
+  echo "  -c - display From line on matches (no action)"
+  [[ $USEDB ]] || echo "  -l - force use of flatfile database"
+  echo "  -n - no-op, just print action"
+  echo "  -o <days> - only files older than"
+  echo "  -r <days> - remove if older than"
+  echo "  -q - quiet"
+  echo "Requires ${USEDB:+rebuild or }-f and/or -t"
+  [[ $UID == 0 ]] && echo "  -u <user> - for user"
+  exit 1
+}
+
+REBUILD='' TO='' FROM='' CHECK='' QUIET='' DRYRUN='' OLDER='' REMOVE=''
+DBUSER=$USER
+
+while [[ $1 ]]; do
+  case $1 in
+    rebuild) REBUILD=1 ;;
+    -c) CHECK=1 ;;
+    -f) shift; [[ $1 ]] || usage
+        FROM=${1#-}
+        ;;
+    -l) USEDB=1 ;;
+    -n) DRYRUN=1 ;;
+    -o) shift; [[ $1 ]] || usage
+        OLDER=$(date +%s)
+        OLDER=$(( OLDER - ( $1 * 86400 ) ))
+        ;;
+    -q) QUIET=1 ;;
+    -r) shift; [[ $1 ]] || usage
+        REMOVE=$(date +%s)
+        REMOVE=$(( REMOVE - ( $1 * 86400 ) ))
+        ;;
+    -t) shift; [[ $1 ]] || usage
+        TO=${1#-}
+        [[ $TO =~ @ ]] && TO=${TO%@*}
+        ;;
+    -u) [[ $UID == 0 ]] || usage
+        shift
+        DBUSER=$1
+        [[ $DBUSER ]] || usage
+        id &>/dev/null "$DBUSER" || die "No such user $DBUSER"
+        eval HOME=~"$DBUSER"
+        ;;
+    *) usage ;;
+  esac
+  shift
+done
+
+[[ $REBUILD || $TO || $FROM ]] || usage
+
+umask 0077
+DBFILE="/tmp/db-$DBUSER"
+
+rebuild_db() {
+  echo "Generating database.  This may take a few mins..."
+  pushd >/dev/null ~/Maildir/cur || exit
+  grep -RiZ -m 2 -E '^(delivered-to|from):' > "$DBFILE.tmp"
+  popd >/dev/null || exit
+
+  # now process file
+  local line file nfile pfile header pheader
+  local from to
+  if read -rd '' line; then
+    nfile=${line}
+    while read -rd '' line || [[ $line ]]; do
+      pfile=$file
+      file=$nfile
+      nfile=${line#*$'\n'}
+      pheader=$header
+      header=${line%$'\n'"$nfile"}
+
+      if [[ $pfile == "$file" ]]; then
+        if [[ ${header:4:1} != : ]]; then
+          to=$header
+          from=$pheader
+        else
+          from=$header
+          to=$pheader
+        fi
+      elif [[ $file != "$nfile" ]]; then
+        # lone header
+        [[ ${header:4:1} != : ]] && { to=$header; from=''; }
+      fi
+      # to required, from optional
+      [[ $to ]] && {
+        to=${to:14}
+        echo "$file|${to%@*}|${from:6}"
+        to='' from=''
+      }
+    done
+    : # ignore read rc
+  fi < "$DBFILE.tmp" > "$DBFILE.new" || exit
+  rm "$DBFILE.tmp"
+  mv "$DBFILE.new" "$DBFILE"
+  chown "$DBUSER:$DBUSER" "$DBFILE"
+}
+
+[[ $USEDB ]] && {
+  [[ -r $DBFILE || $REBUILD ]] || {
+    printf %s >&2 "Database missing, generate it now? (Y/n): "
+    read -r || exit
+    case $REPLY in Y|y|'') :;; *) exit 0;; esac
+    REBUILD=1
+  }
+
+  [[ $REBUILD ]] && rebuild_db
+  [[ $TO || $FROM ]] || exit 0
+}
+
+search_db() {
+  [[ $OLDER || $CHECK ]] || {
+    grep -Ei "[^|]+\|${TO:-[^|]+}\|.*$FROM.*" "$DBFILE" | sed 's/|.*//'
+    return
+  }
+  local line age
+  while read -r line; do
+    [[ $OLDER ]] && {
+      age=${line%%.*}
+      (( age > OLDER )) && continue
+    }
+    if [[ $CHECK ]]; then
+      line=${line#*|}
+      echo "${line#*|}"
+    else
+      echo "${line%%|*}"
+    fi
+  done < <(grep -Ei "[^|]+\|${TO:-[^|]+}\|.*$FROM.*" "$DBFILE")
+}
+
+search_doveadm() {
+  local search=(mailbox inbox)
+
+  [[ $TO ]] && search+=(header delivered-to "$TO")
+  [[ $FROM ]] && search+=(from "$FROM")
+  [[ $OLDER ]] && search+=(before "$OLDER")
+
+  local from infrom
+  while read -r line; do
+    case $line in
+      From:*|from:*)
+        from=${line:6}
+        infrom=1
+        ;;
+      Delivered-To:*|delivered-to:*)
+        [[ $TO ]] && to=${line:14}
+        ;;
+      guid:*)
+        file=${line:6}
+        ;;
+      *)
+        [[ $infrom ]] && {
+          [[ -z $TO || $to == "$TO"@* ]] && {
+            if [[ $CHECK ]]; then
+              [[ ${line:0:1} == " " ]] && from+="$line"
+              echo "$from"
+            else
+              echo "$file"
+            fi
+          }
+          infrom='' from='' to=''
+          # skip to next file
+          while read -r line; do
+            case $line in
+              guid:*)
+                file=${line:6}
+                break
+                ;;
+            esac
+          done
+        }
+        ;;
+    esac
+  done < <(doveadm 2>/dev/null fetch 'guid hdr' "${search[@]}")
+}
+
+do_query() {
+  if [[ $USEDB ]]; then
+    search_db
+  else
+    search_doveadm
+  fi
+}
+
+[[ $CHECK ]] && {
+  do_query
+  exit
+}
+
+cnt=$(do_query | wc -l)
+[[ $cnt == 0 ]] && die "No matches"
+printf %s >&2 "Found $cnt, move to trash? (y/N): "
+read -r || exit
+case $REPLY in y|Y) :;; *) exit 1;; esac
+
+[[ $USEDB ]] && shopt -s nullglob
+
+found=0 wild=0 delete=0
+
+while read -r file; do
+  if [[ $USEDB ]]; then
+    echo "$file"
+    [[ -f ~/Maildir/cur/$file ]] || {
+      for item in ~/Maildir/cur/"${file%:*}"*; do break; done
+      [[ $item ]] || continue
+      file=${item##*/}
+      (( wild++ ))
+    }
+  fi
+  (( found++ ))
+  remove=
+  [[ $REMOVE ]] && {
+    age=${file%%.*}
+    (( age < REMOVE )) && {
+      remove=1
+      (( delete++ ))
+    }
+  }
+  [[ $QUIET ]] || {
+    if [[ $remove ]]; then
+      echo "removing $file"
+    else
+      echo "trashing $file"
+    fi
+  }
+
+  [[ $DRYRUN ]] && continue
+  if [[ $USEDB ]]; then
+    if [[ $remove ]]; then
+      rm -f ~/Maildir/cur/"$file"
+    else
+      mv ~/Maildir/cur/"$file" ~/Maildir/.Trash/cur
+    fi
+  else
+    if [[ $remove ]]; then
+      doveadm 2>/dev/null flags add '\Deleted' mailbox inbox guid "$file"
+      doveadm 2>/dev/null expunge mailbox inbox guid "$file"
+    else
+      doveadm 2>/dev/null move Trash mailbox inbox guid "$file"
+    fi
+  fi
+done < <(do_query)
+
+echo "Found $found files"
+(( wild > 0 )) && echo "$wild needed wildcards..."
+(( delete )) && echo "$delete for deletion"
+[[ $DRYRUN || $CHECK ]] && echo "(no action taken)"
