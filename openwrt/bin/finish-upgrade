@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.15
+# finish-upgrade v1.16
 
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
@@ -321,6 +321,7 @@ if [ "$full" ]; then
   # big, only when required
   #install_pkgs luci-app-sqm || :
   install_pkgs ip-tiny || :
+  install_pkgs bind-dig || :
 fi
 
 echo
