@@ -13,9 +13,9 @@ mysetprompt() {
       # on screen, use title (set hardstatus to use %t so can format it)
       [[ $TERM =~ ^screen ]] && pkey="k"
       (( ${BASH_VERSINFO[0]} < 4 )) && home="~"
-      PROMPT_COMMAND="printf '\033${pkey}%s\033\\' "'"$USER@${HOSTNAME%%.*}:${PWD/#$HOME/'"$home"'}"'
-      telnet() { local _x=${PROMPT_COMMAND#* \'}; printf "${_x%%\' *}" "telnet $*"; command telnet "$@"; }
-      ssh() { local _x=${PROMPT_COMMAND#* \'}; printf "${_x%%\' *}" "ssh $*"; command ssh "$@"; }
+      PROMPT_COMMAND="[[ ! -t 1 ]] || printf '\033${pkey}%s\033\\' "'"$USER@${HOSTNAME%%.*}:${PWD/#$HOME/'"$home"'}"'
+      telnet() { [[ -t 1 ]] && { local _x=${PROMPT_COMMAND#* \'}; printf "${_x%%\' *}" "telnet $*"; }; command telnet "$@"; }
+      ssh() { [[ -t 1 ]] && { local _x=${PROMPT_COMMAND#* \'}; printf "${_x%%\' *}" "ssh $*"; }; command ssh "$@"; }
       ;;
   esac
   return 0
