@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# finish-upgrade v1.16
+# finish-upgrade v1.17
 
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
@@ -296,6 +296,11 @@ fi
 
 if [ -f /usr/bin/resize ]; then
   install_pkgs coreutils-stty
+fi
+
+if [ -f /etc/config/nut_server ]; then
+  # this pulls in nut-server
+  install_pkgs nut-driver-usbhid-ups nut-upsc nut-upscmd
 fi
 
 # regular packages
