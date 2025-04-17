@@ -1,0 +1,32 @@
+#!/bin/bash
+#
+# Monitor hotplug v1.2
+#
+# Called from /etc/udev/rules.d/95-monitor-hotplug.rules
+#
+# Starts getty@tty1 if monitor connected, stops if not
+
+log() {
+  logger -t monitor_hotplug "$*"
+}
+
+log "hotplug $*"
+
+if /usr/local/sbin/monitor_check >/dev/null; then
+
+  # in case we just started and were failing...
+  systemctl -q is-failed getty@tty1 && systemctl reset-failed getty@tty1
+
+  # only start if media mount available
+  if systemctl -q is-active mnt-media.mount &&
+      ! systemctl -q is-active getty@tty1; then
+    log "Starting getty"
+    systemctl start getty@tty1
+  fi
+else
+
+  # disable tty to prevent kodi crashes w/o display
+  log "Stopping getty"
+  systemctl stop getty@tty1
+fi
+

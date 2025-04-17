@@ -1,11 +1,18 @@
 #!/bin/bash
 
+MOUNTS=("media" "backup")
+CRYPTS=("backup")
+
 # run by udev 90-extdata-action.rules, and will cleanup
 # leftover devices after forced disk removal so adding the
 # disk back can re-use the names... (or just restart smartd)
-[[ $1 ]] || { echo >&2 "Usage: $0 <napa|tahoe|smartd>"; exit 1; }
+ACTION=$1
+LOC=$2
 
-LOC=$1
+usage() {
+  echo >&2 "Usage: $0 <start|stop> <location>"
+  exit 1
+}
 
 smartd() {
   # reset smartd
@@ -13,28 +20,55 @@ smartd() {
   return 0
 }
 
-[[ $LOC == smartd ]] && { smartd; exit 0; }
+stop() {
+  local mnt
+  for mnt in "${MOUNTS[@]}"; do
+    systemd-mount --umount "/mnt/$mnt"
+  done
 
-systemd-mount --umount /mnt/media
-systemd-mount --umount /mnt/backup
+  # close encrypted device
+  for mnt in "${CRYPTS[@]}"; do
+    if dmsetup &>/dev/null info "${LOC}-$mnt"; then
+      cryptsetup close "${LOC}-$mnt"
+    fi
+  done
 
-# close encrypted device
-if dmsetup &>/dev/null info ${LOC}-backup; then
-  cryptsetup close ${LOC}-backup
-fi
-
-# if block device not removed, deactivate the volume group
-if vgdisplay &>/dev/null extdata_$LOC; then
-  vgchange -an extdata_$LOC
-fi
-
-# these don't appear to get removed by pvscan
-for mnt in backup media; do
-  if dmsetup &>/dev/null info extdata_${LOC}-$mnt; then
-    dmsetup remove extdata_${LOC}-$mnt
+  # if block device not removed, deactivate the volume group
+  if vgdisplay &>/dev/null "extdata_$LOC"; then
+    vgchange -an "extdata_$LOC"
   fi
-done
 
-smartd
+  # these don't appear to get removed by pvscan
+  for mnt in "${MOUNTS[@]}"; do
+    if dmsetup &>/dev/null info "extdata_${LOC}-$mnt"; then
+      dmsetup remove --deferred "extdata_${LOC}-$mnt"
+    fi
+  done
+
+  smartd
+}
+
+start() {
+  # activate vg
+  if vgdisplay &>/dev/null "extdata_$LOC"; then
+    vgchange -ay "extdata_$LOC"
+  fi
+
+  smartd
+}
+
+[[ $LOC ]] || usage
+
+case "$ACTION" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  *)
+    usage
+    ;;
+esac
 
 exit 0

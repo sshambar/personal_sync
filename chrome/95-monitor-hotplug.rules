@@ -1,2 +1,2 @@
 # Needed because Denon doesn't have valid EDID when off
-SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ACTION=="change", RUN+="/usr/bin/systemd-run -u monitor-hotplug --service-type=oneshot /usr/local/sbin/monitor_hotplug"
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ACTION=="change", RUN+="/usr/bin/systemd-run --no-block -u monitor-hotplug --service-type=oneshot /usr/local/sbin/monitor_hotplug"

@@ -1,0 +1,43 @@
+#!/bin/bash
+#
+# monitor_check v1.1
+#
+# Checks if monitor is connected
+#
+# If 'limited' or 'full' parameter given, also set the color range on the
+# monitor.  Any other args are passed to `modetest`
+#
+
+RGB=
+EXTRA=()
+
+for arg in "$@"; do
+  case $arg in
+    full)
+      # full RGB
+      RGB=1
+      ;;
+    limited)
+      # limited 16:235 output values
+      RGB=2
+      ;;
+    *)
+      EXTRA+=("$arg")
+      ;;
+  esac
+done
+
+MONITOR=$(modetest "${EXTRA[@]}" -c | grep '^[0-9]\+.*[[:space:]]connected' | head -1 | cut -f 1)
+
+log() {
+  logger -t monitor_check "$*"
+}
+
+[[ -z $MONITOR ]] && log "No connected monitor" && exit 1
+
+log "Monitor found"
+
+[[ $RGB ]] && modetest "${EXTRA[@]}" -w "$MONITOR:Broadcast RGB:$RGB"
+
+exit 0
+
