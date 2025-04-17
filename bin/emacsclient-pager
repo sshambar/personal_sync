@@ -63,13 +63,7 @@ if [ -n "$TMPFILE" -a -w "$TMPFILE" ]; then
     (($? > 1)) && exit 2
   else
     # remove any color codes, [char]^H sequences...
-    if command -v perl &>/dev/null; then
-      perl -pe 's/\x1b\[[0-9;]*m//g;s/\x1b]4[^\\]*\\//g;s/.\x8//g' >> "$TMPFILE"
-    else
-      # doesn't work if sed doesn't support "enhanced" basic expressions
-      sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b]4[^\\]*\\//g' -e 's/.\x08//g' >> "$TMPFILE"
-    fi
-
+    sed -E -e 's/\x1b\[[0-9;]*m//g' -e 's/\x1b]4[^\\]*\\//g' -e 's/.\x08//g' >> "$TMPFILE"
   fi
   TARGET=$TMPFILE
 fi
