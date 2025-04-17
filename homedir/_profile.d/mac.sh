@@ -29,7 +29,7 @@ add_path PATH ~/.local/bin before
 add_path MANPATH ~/.local/share/man before
 
 # X11 man pages
-add_path MANPATH /opt/X11/share/man
+add_path MANPATH /opt/X11/share/man before
 
 # developer man pages
 add_path MANPATH /Applications/Xcode.app/Contents/Developer/usr/share/man
@@ -50,7 +50,7 @@ alias ll='ls -l'
 
 # OSX has different tools
 strace() { echo "use dtruss or dtrace"; }
-ldd() { objdump -macho -dylibs-used -non-verbose "$@"; }
+ldd() { objdump --macho --dylibs-used --non-verbose "$@"; }
 
 alias dialout='screen /dev/cu.usbserial-0001 115200'
 
