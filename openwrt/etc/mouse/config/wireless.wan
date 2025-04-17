@@ -1,0 +1,9 @@
+config wifi-iface
+	option device 'radio0'
+	option network 'wan'
+	option mode 'sta'
+	option ssid 'home'
+	option encryption 'psk2'
+	option macaddr 'e4:95:6e:40:91:f5'
+	option key 'redacted'
+

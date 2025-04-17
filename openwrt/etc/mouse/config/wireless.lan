@@ -1,0 +1,9 @@
+config wifi-iface
+	option device 'radio0'
+	option network 'lan'
+	option mode 'ap'
+	#option ssid 'Mouse'
+	option ssid 'homelandsec2.4'
+	option encryption 'psk2'
+	option key 'redacted'
+

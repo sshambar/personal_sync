@@ -1,0 +1,48 @@
+
+config interface 'loopback'
+	option ifname 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config globals 'globals'
+	option ula_prefix 'fde0:457a:24c2::/48'
+
+config interface 'lan'
+	option type 'bridge'
+	option ifname 'eth0.1 eth0.2'
+	option proto 'static'
+	option netmask '255.255.255.0'
+	option ip6assign '60'
+	option ipaddr '192.168.22.1'
+
+config device 'lan_dev'
+	option name 'eth0.1'
+	option macaddr 'e4:95:6e:40:91:f7'
+
+config interface 'wan'
+	option proto 'dhcp'
+	option hostname 'MyMiniW'
+
+config device 'wan_dev'
+	option name 'eth0.2'
+	option macaddr 'e4:95:6e:40:91:f8'
+
+config interface 'wan6'
+	option proto 'dhcpv6'
+
+config switch
+	option name 'switch0'
+	option reset '1'
+	option enable_vlan '1'
+
+config switch_vlan
+	option device 'switch0'
+	option vlan '1'
+	option ports '1 2 3 4 6t'
+
+config switch_vlan
+	option device 'switch0'
+	option vlan '2'
+	option ports '0 6t'
+
