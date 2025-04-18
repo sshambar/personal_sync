@@ -1,32 +1,62 @@
 #!/bin/bash
 #
-# Monitor hotplug v1.2
+# Monitor hotplug v1.3
 #
 # Called from /etc/udev/rules.d/95-monitor-hotplug.rules
 #
-# Starts getty@tty1 if monitor connected, stops if not
+# Starts $CONSOLE if monitor connected, stops if not
+
+CONSOLE=getty@tty2
 
 log() {
   logger -t monitor_hotplug "$*"
 }
 
-log "hotplug $*"
+# don't activate during upgrade/rescue etc...
+systemctl -q is-active multi-user.target || {
+  log "is-active multi-user.target $? - not activating"
+  exit 0
+}
 
-if /usr/local/sbin/monitor_check >/dev/null; then
+[[ $1 ]] && {
+
+  if [[ $1 == trigger ]]; then
+    log "hotplug trigger"
+    [[ -x $0 ]] && command -v >/dev/null flock && {
+        # serialize startup, fail if locked...
+        flock -n "$0" "$0" locked
+        exit 0
+      }
+    # no flock, race prone...
+  else
+    log "hotplug exclusive"
+  fi
+
+  # ensure service doesn't exist
+  systemctl -q is-active monitor-hotplug
+  [[ $? -eq 4 ]] || exit 0
+
+  # run async (no args)
+  systemd-run --no-block -G -u monitor-hotplug --service-type=oneshot "$0"
+  exit 0
+}
+
+if /usr/local/libexec/monitor_check >/dev/null; then
 
   # in case we just started and were failing...
-  systemctl -q is-failed getty@tty1 && systemctl reset-failed getty@tty1
+  systemctl -q is-failed "$CONSOLE" && systemctl reset-failed "$CONSOLE"
 
   # only start if media mount available
   if systemctl -q is-active mnt-media.mount &&
-      ! systemctl -q is-active getty@tty1; then
+      ! systemctl -q is-active "$CONSOLE"; then
     log "Starting getty"
-    systemctl start getty@tty1
+    systemctl start "$CONSOLE"
   fi
 else
 
   # disable tty to prevent kodi crashes w/o display
   log "Stopping getty"
-  systemctl stop getty@tty1
+  systemctl stop "$CONSOLE"
 fi
+exit 0
 

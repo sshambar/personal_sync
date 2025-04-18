@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# monitor_check v1.1
+# monitor_check v1.2
 #
 # Checks if monitor is connected
 #
@@ -26,6 +26,9 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# if starting getty, monitor probably just reset, sleep a sec
+[[ $RGB ]] && sleep 1
 
 MONITOR=$(modetest "${EXTRA[@]}" -c | grep '^[0-9]\+.*[[:space:]]connected' | head -1 | cut -f 1)
 
