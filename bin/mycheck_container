@@ -1,6 +1,6 @@
 #!/bin/bash
-
-# mycheck_container v0.5
+#
+# mycheck_container v0.6
 # Author: Scott Shambarger <devel@shambarger.net>
 #
 # Copyright (C) Scott Shambarger
@@ -67,13 +67,25 @@ check_svc() {
   [[ -d "$TAG_DIR" ]] || mkdir -p "$TAG_DIR"
   [[ -d "$TAG_DIR" ]] || die "Unable to create tracking directory $TAG_DIR"
 
+  SVC_CHECKED=1
+
   command -v >/dev/null "$SVC" || {
     [[ $ALT_SVC ]] && command -v >/dev/null "$ALT_SVC" && SVC=$ALT_SVC
   }
 
+  command -v >/dev/null synopkg && {
+    debug "Checking if ContainerManager started..."
+    synopkg >/dev/null is_onoff ContainerManager || {
+      synopkg start ContainerManager || {
+	tag_fail "" "Unable to start synology ContainerManager"
+	return $SVC_CHECKED
+      }
+      sleep 5
+    }
+  }
+
   debug "Checking if $SVC available"
 
-  SVC_CHECKED=1
   if command -v >/dev/null "$SVC"; then
     local out
     if out=$("$SVC" info 2>&1); then
