@@ -1,7 +1,7 @@
 #!/bin/sh
-
-# finish-upgrade v1.17
-
+#
+# finish-upgrade v1.18
+#
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
 #    tcpdump-mini procps-ng-ps less irqbalance coreutils-stty iperf3
@@ -282,6 +282,11 @@ fi
 
 if [ -f /etc/screenrc ]; then
   install_pkgs screen
+fi
+
+if [ -h /etc/localtime ]; then
+  # could use -all, but why waste space...
+  install_pkgs zoneinfo-america
 fi
 
 if [ -f /etc/ssh/ssh_config ]; then
