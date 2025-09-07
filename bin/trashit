@@ -4,79 +4,119 @@
 #
 # Copyright (C) 2025 Scott Shambarger
 #
-# trashit v1.0.1 - Index and search messages in Maildirs to trash/delete
+# trashit v1.2.0 - Index and search messages in Maildirs to trash/delete
 # Author: Scott Shambarger <devel@shambarger.net>
 #
 
-die() { echo >&2 "$*"; exit 1; }
+BATCH_SIZE=10
+# only used for if doveadm not available
+DBFILE="/tmp/db-<user>"
 
-USEDB=
+warn() { local IFS; printf >&2 '%s\n' "$*"; }
+die() { local IFS; warn "$*"; exit 1; }
+msg() { local IFS; [[ $QUIET ]] || printf "%s\n" "$*"; }
+
+USEDB=''
 command >/dev/null -v doveadm || USEDB=1
 
-usage() {
-  echo "Trash messages matching patterns"
-  echo "trashit ${USEDB:+[ rebuild ] }<option>"
-  echo "<options> are:"
-  echo "  -t address - match Delivered-To (address@...)"
-  echo "  -f string - match part of From"
-  echo "  -c - display From line on matches (no action)"
-  [[ $USEDB ]] || echo "  -l - force use of flatfile database"
-  echo "  -n - no-op, just print action"
-  echo "  -o <days> - only files older than"
-  echo "  -r <days> - remove if older than"
-  echo "  -q - quiet"
-  echo "Requires ${USEDB:+rebuild or }-f and/or -t"
-  [[ $UID == 0 ]] && echo "  -u <user> - for user"
+usage() { # [ <err> ]
+  warn "$* (use -h for help)"
   exit 1
 }
 
-REBUILD='' TO='' FROM='' CHECK='' QUIET='' DRYRUN='' OLDER='' REMOVE=''
-DBUSER=$USER
+help() {
+  warn "Trash messages matching patterns"
+  warn "trashit ${USEDB:+[ rebuild ] }<option>"
+  warn "<options> are:"
+  [[ $UID == 0 ]] && warn "  -u <name> - for user <name>"
+  warn "  -t <addr> - match Delivered-To (<addr>@...)"
+  warn "  -f <from> - match part of From"
+  warn "  -c - display From line on matches (no action)"
+  warn "  -C - display file, To and From line on matches (no action)"
+  [[ $USEDB ]] || warn "  -l - force use of flatfile database"
+  warn "  -n - dry-run (no action)"
+  warn "  -o <days> - only files older than <days> ago"
+  warn "  -a <days> - only files after <days> ago (> 0)"
+  warn "  -r <days> - remove if older than <days> ago"
+  warn "  -q - quiet"
+  warn "  -v - show more details"
+  warn "Requires ${USEDB:+rebuild or }-f and/or -t"
+  exit 0
+}
+
+REBUILD='' TO='' FROM='' CHECK='' DRYRUN='' OLDER='' AFTER='' REMOVE=''
+QUIET='' VERBOSE='' DBUSER='' DOVEARGS=()
+NOW=$(date +%s)
 
 while [[ $1 ]]; do
   case $1 in
     rebuild) REBUILD=1 ;;
+    -a) shift; [[ $1 ]] || usage "Option -a requires <days>"
+        (( $1 > 0 )) || usage "Option -a must be > 0"
+        AFTER=$(( NOW - ( $1 * 86400 ) ))
+        ;;
     -c) CHECK=1 ;;
-    -f) shift; [[ $1 ]] || usage
+    -C) CHECK=2 ;;
+    -f) shift; [[ $1 ]] || usage "Option -f requires <from>"
         FROM=${1#-}
         ;;
+    -h) help ;;
     -l) USEDB=1 ;;
     -n) DRYRUN=1 ;;
-    -o) shift; [[ $1 ]] || usage
-        OLDER=$(date +%s)
-        OLDER=$(( OLDER - ( $1 * 86400 ) ))
+    -o) shift; [[ $1 ]] || usage "Option -o requires <days>"
+        (( $1 > 0 )) && {
+          OLDER=$(( NOW - ( $1 * 86400 ) ))
+        }
         ;;
     -q) QUIET=1 ;;
-    -r) shift; [[ $1 ]] || usage
-        REMOVE=$(date +%s)
-        REMOVE=$(( REMOVE - ( $1 * 86400 ) ))
+    -r) shift; [[ $1 ]] || usage "Option -r requires <days>"
+        (( $1 > 0 )) && {
+          REMOVE=$(( NOW - ( $1 * 86400 ) ))
+        }
         ;;
-    -t) shift; [[ $1 ]] || usage
+    -t) shift; [[ $1 ]] || usage "Option -t requires <addr>"
         TO=${1#-}
         [[ $TO =~ @ ]] && TO=${TO%@*}
         ;;
-    -u) [[ $UID == 0 ]] || usage
+    -u) [[ $UID == 0 ]] || usage "Option -u only usable as root user"
         shift
         DBUSER=$1
-        [[ $DBUSER ]] || usage
-        id &>/dev/null "$DBUSER" || die "No such user $DBUSER"
-        eval HOME=~"$DBUSER"
+        [[ $DBUSER ]] || usage "Option -u requires <user>"
         ;;
-    *) usage ;;
+    -v) VERBOSE=1 ;;
+    *) usage "Unknown arg: $1"
+       ;;
   esac
   shift
 done
 
-[[ $REBUILD || $TO || $FROM ]] || usage
+[[ $REBUILD || $TO || $FROM ]] ||
+  usage "Requires ${USEDB:+rebuild or }-f and/or -t"
 
-umask 0077
-DBFILE="/tmp/db-$DBUSER"
+# sanity check args
+[[ $REMOVE && $OLDER ]] && { (( REMOVE < OLDER )) || REMOVE=$OLDER; }
+[[ $OLDER && $AFTER ]] && {
+  (( AFTER < OLDER )) || die "-a <days> must be greater than -o <days>"; }
+
+if [[ $DBUSER ]]; then
+  if [[ $USEDB ]]; then
+    # ensure local user exists
+    id &>/dev/null "$DBUSER" || die "No such user $DBUSER"
+    eval HOME=~"$DBUSER"
+  else
+    DOVEARGS+=("-u" "$DBUSER")
+  fi
+else
+  DBUSER=$USER
+fi
+
+# only used for if doveadm not available
+DBFILE=${DBFILE/<user>/$DBUSER}
 
 rebuild_db() {
-  echo "Generating database.  This may take a few mins..."
-  pushd >/dev/null ~/Maildir/cur || exit
+  warn "Generating database.  This may take a few mins..."
+  # TODO main weakness here is multi-line From: are incomplete...
   grep -RiZ -m 2 -E '^(delivered-to|from):' > "$DBFILE.tmp"
-  popd >/dev/null || exit
 
   # now process file
   local line file nfile pfile header pheader
@@ -117,10 +157,15 @@ rebuild_db() {
 }
 
 [[ $USEDB ]] && {
+  # setup DB environment
+  umask 0077
+
+  cd ~/Maildir/cur || exit
+  shopt -s nullglob || exit
+
   [[ -r $DBFILE || $REBUILD ]] || {
-    printf %s >&2 "Database missing, generate it now? (Y/n): "
-    read -r || exit
-    case $REPLY in Y|y|'') :;; *) exit 0;; esac
+    read >&2 -rp "Database missing, generate it now? (Y/n): " || exit
+    [[ $REPLY =~ ^(y|Y|)$ ]] || exit 0
     REBUILD=1
   }
 
@@ -129,77 +174,86 @@ rebuild_db() {
 }
 
 search_db() {
-  [[ $OLDER || $CHECK ]] || {
-    grep -Ei "[^|]+\|${TO:-[^|]+}\|.*$FROM.*" "$DBFILE" | sed 's/|.*//'
-    return
-  }
   local line age
+
   while read -r line; do
+    age=${line%%.*}
+    [[ $AFTER ]] && {
+      (( age >= AFTER )) || continue
+    }
     [[ $OLDER ]] && {
-      age=${line%%.*}
-      (( age > OLDER )) && continue
+      (( age >= OLDER )) && continue
     }
     if [[ $CHECK ]]; then
-      line=${line#*|}
-      echo "${line#*|}"
+      [[ $VERBOSE ]] && echo "$(date -d @"${line%%.*}")"
+      if [[ $CHECK == 2 ]]; then
+        echo "${line//|/ | }"
+      else
+        line=${line#*|}
+        echo "${line#*|}"
+      fi
     else
       echo "${line%%|*}"
     fi
+    (( count++ )) || :
   done < <(grep -Ei "[^|]+\|${TO:-[^|]+}\|.*$FROM.*" "$DBFILE")
 }
 
 search_doveadm() {
-  local search=(mailbox inbox)
+  local search line file from to extra fields="guid uid"
 
+  search=(mailbox inbox)
   [[ $TO ]] && search+=(header delivered-to "$TO")
   [[ $FROM ]] && search+=(from "$FROM")
   [[ $OLDER ]] && search+=(before "$OLDER")
+  [[ $AFTER ]] && search+=(since "$AFTER")
 
-  local from infrom
+  [[ $CHECK ]] && fields="hdr.from hdr.delivered-to $fields"
+
   while read -r line; do
     case $line in
-      From:*|from:*)
-        from=${line:6}
-        infrom=1
-        ;;
-      Delivered-To:*|delivered-to:*)
-        [[ $TO ]] && to=${line:14}
-        ;;
-      guid:*)
-        file=${line:6}
+      hdr.from:*) from=${line:10}; extra=1 ;;
+      hdr.delivered-to:*) [[ $TO ]] && to=${line:18} ;;
+      guid:*) file=${line:6} ;;
+      uid:*) # last field, trigger output
+        if [[ $CHECK ]]; then
+          [[ $VERBOSE ]] && echo "$(date -d @"${file%%.*}") | ${line:5}"
+          if [[ $CHECK == 2 ]]; then
+            echo "$file | ${to%@*} | $from"
+          else
+            echo "$from"
+          fi
+        else
+          echo "$file|${line:5}"
+        fi
+        extra=''
+        (( count++ )) || :
         ;;
       *)
-        [[ $infrom ]] && {
-          [[ -z $TO || $to == "$TO"@* ]] && {
-            if [[ $CHECK ]]; then
-              [[ ${line:0:1} == " " ]] && from+="$line"
-              echo "$from"
-            else
-              echo "$file"
-            fi
-          }
-          infrom='' from='' to=''
-          # skip to next file
-          while read -r line; do
-            case $line in
-              guid:*)
-                file=${line:6}
-                break
-                ;;
-            esac
-          done
+        [[ $extra ]] && {
+          extra=''
+          from+=${line:1}
         }
         ;;
     esac
-  done < <(doveadm 2>/dev/null fetch 'guid hdr' "${search[@]}")
+  done < <(doveadm fetch "${DOVEARGS[@]}" "$fields" "${search[@]}")
 }
 
 do_query() {
+  local count=0 rc=0
   if [[ $USEDB ]]; then
-    search_db
+    search_db || rc=$?
   else
-    search_doveadm
+    search_doveadm || rc=$?
   fi
+  [[ $CHECK ]] && {
+    if (( count > 0 )); then
+      msg "Found $count matches"
+    else
+      msg "No matches"
+    fi
+  }
+  return $rc
 }
 
 [[ $CHECK ]] && {
@@ -207,61 +261,102 @@ do_query() {
   exit
 }
 
+action() {
+  local IFS
+  [[ $VERBOSE ]] && warn "$*"
+  [[ $DRYRUN ]] && return
+  "$@"
+}
+
+delete_mail() { # <uid>...
+  [[ $1 ]] || return 0
+  if [[ $USEDB ]]; then
+    action rm -f "$@"
+  else
+    local IFS=,
+    action doveadm flags add "${DOVEARGS[@]}" '\Deleted' \
+           mailbox inbox uid "$*" || return
+    action doveadm expunge "${DOVEARGS[@]}" mailbox inbox uid "$*" || return
+  fi
+  (( deleted += ${#@} )) || :
+}
+
+trash_mail() { # <uid>...
+  [[ $1 ]] || return 0
+  if [[ $USEDB ]]; then
+    local file
+    for file in "$@"; do
+      [[ -f $file ]] && {
+        # fail on permissions error
+        action mv "$file" ~/Maildir/.Trash/cur || return
+        (( trashed++ )) || :
+      }
+    done
+  else
+    local IFS=,
+    action doveadm move "${DOVEARGS[@]}" Trash mailbox inbox uid "$*" || return
+    (( trashed += ${#@} )) || :
+  fi
+}
+
+# updates rem_set() and trash_set()
+check_sets() { # <batch-size>
+  local rc=0
+  (( ${#rem_set[@]} >= $1 )) && {
+    delete_mail "${rem_set[@]}" || rc=$?
+    rem_set=()
+  }
+  (( ${#trash_set[@]} >= $1 )) && {
+    trash_mail "${trash_set[@]}" || rc=$?
+    trash_set=()
+  }
+  return $rc
+}
+
+do_trashit() {
+  local trashed=0 wild=0 deleted=0
+  local line file remove
+  local rem_set=() trash_set=()
+
+  while read -r line; do
+    file=${line%%|*}
+    if [[ $USEDB ]]; then
+      [[ -f $file ]] || {
+        for item in "${file%:*}"*; do break; done
+        [[ $item ]] || continue
+        file=${item##*/}
+        (( wild++ ))
+      }
+    fi
+    [[ $REMOVE ]] && {
+      age=${file%%.*}
+      (( age < REMOVE )) && remove=1 || remove=''
+    }
+    # show uid if verbose
+    [[ $VERBOSE ]] && file=$line
+    if [[ $remove ]]; then
+      msg "removing $file"
+      rem_set+=("${line#*|}")
+    else
+      msg "trashing $file"
+      trash_set+=("${line#*|}")
+    fi
+
+    check_sets "$BATCH_SIZE" || break
+
+  done < <(do_query)
+
+  check_sets 0
+
+  (( trashed > 0 )) && msg "Trashed $trashed"
+  (( deleted > 0 )) && msg "Deleted $deleted"
+  (( wild > 0 )) && msg "  ($wild needed wildcards)"
+  [[ $DRYRUN ]] && echo "DRY-RUN - NO ACTION TAKEN"
+}
+
 cnt=$(do_query | wc -l)
 [[ $cnt == 0 ]] && die "No matches"
-printf %s >&2 "Found $cnt, move to trash? (y/N): "
-read -r || exit
-case $REPLY in y|Y) :;; *) exit 1;; esac
+read >&2 -rp "Found $cnt, move to trash? (y/N): " || exit
+[[ $REPLY =~ ^(y|Y)$ ]] || exit
 
-[[ $USEDB ]] && shopt -s nullglob
-
-found=0 wild=0 delete=0
-
-while read -r file; do
-  if [[ $USEDB ]]; then
-    echo "$file"
-    [[ -f ~/Maildir/cur/$file ]] || {
-      for item in ~/Maildir/cur/"${file%:*}"*; do break; done
-      [[ $item ]] || continue
-      file=${item##*/}
-      (( wild++ ))
-    }
-  fi
-  (( found++ ))
-  remove=
-  [[ $REMOVE ]] && {
-    age=${file%%.*}
-    (( age < REMOVE )) && {
-      remove=1
-      (( delete++ ))
-    }
-  }
-  [[ $QUIET ]] || {
-    if [[ $remove ]]; then
-      echo "removing $file"
-    else
-      echo "trashing $file"
-    fi
-  }
-
-  [[ $DRYRUN ]] && continue
-  if [[ $USEDB ]]; then
-    if [[ $remove ]]; then
-      rm -f ~/Maildir/cur/"$file"
-    else
-      mv ~/Maildir/cur/"$file" ~/Maildir/.Trash/cur
-    fi
-  else
-    if [[ $remove ]]; then
-      doveadm 2>/dev/null flags add '\Deleted' mailbox inbox guid "$file"
-      doveadm 2>/dev/null expunge mailbox inbox guid "$file"
-    else
-      doveadm 2>/dev/null move Trash mailbox inbox guid "$file"
-    fi
-  fi
-done < <(do_query)
-
-echo "Found $found files"
-(( wild > 0 )) && echo "$wild needed wildcards..."
-(( delete )) && echo "$delete for deletion"
-[[ $DRYRUN || $CHECK ]] && echo "(no action taken)"
+do_trashit
