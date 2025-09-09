@@ -572,6 +572,14 @@ If FACES is not provided or nil, use `face-list' instead."
             'bash-completion-dynamic-complete))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Yaml Mode (MELPA package)
+
+(add-hook 'yaml-mode-hook
+          (lambda ()
+            (auto-fill-mode -1)
+            ) t)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Web Mode (MELPA package)
 
 (when (fboundp 'web-mode)
