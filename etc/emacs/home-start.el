@@ -577,6 +577,7 @@ If FACES is not provided or nil, use `face-list' instead."
 (add-hook 'yaml-mode-hook
           (lambda ()
             (auto-fill-mode -1)
+            (setq show-trailing-whitespace t)
             ) t)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
