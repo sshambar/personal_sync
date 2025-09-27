@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # -*- mode:sh; sh-indentation:2 -*- vim:set ft=sh et sw=2 ts=2:
 #
-# ssltest v0.1 SSL Cipher Test using OpenSSL
+# ssltest v0.2 SSL Cipher Test using OpenSSL
 #
 # Author: Scott Shambarger <devel@shambarger.net>
-# Copyright (C) 2019 Scott Shambarger
+# Copyright (C) 2019-2025 Scott Shambarger
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -27,9 +27,13 @@ CIPHERLIST='ALL:@STRENGTH:!PSK:!DSS:!SRP'
 #CIPHERLIST='aNULL'
 DEFDELAY=1
 
+err() { echo >&2 "$*"; }
+die() { err "$*"; exit 1; }
+
 usage() {
   echo "usage: $0 [ -{012} ] [ -l | -i | -m ] [ <host:port> [ <s_client options> ] ]"
-  echo "  default host:port is localhost:4433 (openssl s_client)"
+  echo "  default <host:port> is localhost:4433 (openssl s_client)"
+  echo "     <host> defaults to port 443"
   echo "  -0 - use <=tlsv1.0"
   echo "  -1 - use <=tlsv1.1"
   echo "  -2 - use <=tlsv1.2"
@@ -41,8 +45,8 @@ usage() {
   exit 0
 }
 
-[ -z "$(command -v openssl)" ] && echo "Unable to find openssl executable" && exit 1
-[[ $(openssl version) =~ OpenSSL ]] || { echo "Script only works with OpenSSL"; exit 1; }
+command >/dev/null -v openssl || die "Unable to find openssl executable"
+[[ $(openssl version) =~ OpenSSL ]] || die "Script only works with OpenSSL"
 
 LVLOPT=
 list=
@@ -50,17 +54,17 @@ pref_only=
 while getopts ":012ilmps" arg; do
   case $arg in
     0)
-      [ -n "$LVLOPT" ] && usage
+      [[ $LVLOPT ]] && usage
       echo "Using <= TLSv1"
       LVLOPT="-tls1"
       ;;
     1)
-      [ -n "$LVLOPT" ] && usage
+      [[ $LVLOPT ]] && usage
       echo "Using <= TLSv1.1"
       LVLOPT="-tls1_1"
       ;;
     2)
-      [ -n "$LVLOPT" ] && usage
+      [[ $LVLOPT ]] && usage
       echo "Using <= TLSv1.2"
       LVLOPT="-tls1_2"
       ;;
@@ -82,102 +86,107 @@ shift $((OPTIND-1))
 
 process_dest() { # [ [<hostname>][:<port>] ]
   local port host dest
-  if [ -n "$1" ]; then
+  if [[ $1 ]]; then
     dest=$1
     host=${dest%:*}
     [[ $dest =~ : ]] && port=${dest#*:}
   fi
 
   # setup defaults
-  if [ -z "$port" ]; then
+  [[ $port ]] || {
     port=4433
-    [ "$STARTTLS" = "-starttls smtp" ] && port=25
-    [ "$STARTTLS" = "-starttls imap" ] && port=143
-  fi
-  [ -z "$host" ] && host=localhost
-  dest=${host}:$port
-  if [ "$port" == "25" -o "$port" == "587" ]; then
-    STARTTLS="-starttls smtp"
-  fi
-  SERVER="-connect $dest"
+    [[ $host ]] && port=443
+    [[ $STARTTLS == "-starttls smtp" ]] && port=25
+    [[ $STARTTLS == "-starttls imap" ]] && port=143
+  }
+  [[ $host ]] || host=localhost
+  ARGS=("-connect" "${host}:$port")
+  [[ $port == 25 || $port == 587 ]] && ARGS+=("-starttls" "smtp")
 }
 
-process_dest "$1"
-shift
-# rest of args are for openssl...
+load_ciphers() {
+  ciphers=()
+  ciphers13=()
 
-#echo Obtaining cipher list from $(openssl version).
-ciphers=
-ciphers13=
-if [ -z "$pref_only" ]; then
-  CLVLOPT=$LVLOPT
-  if [ -z "$LVLOPT" ] && openssl ciphers -tls1_3 >/dev/null 2>&1; then
-    # tls1.3 supported, need to handle cipher vs ciphersuite args
-    CLVLOPT=-tls1_2
-    ciphers13=$(openssl ciphers -s "TLS1.3:@SECLEVEL=0" | tr : " ")
+  [[ $pref_only ]] && return
+  # get cipher list from $(openssl version).
+  local opts=()
+  if [[ $LVLOPT ]]; then
+    opts=("$LVLOPT")
+  elif openssl ciphers -tls1_3 >/dev/null 2>&1; then
+    # tls1.3 supported, get ciphersuites list
+    readarray -t -d : ciphers13 < <(openssl ciphers -tls1_3 -s "${CIPHERLIST}")
+    opts=("-tls1_2")
   fi
-  ciphers=$(openssl ciphers $CLVLOPT -s "${CIPHERLIST}:@SECLEVEL=0" | tr : " ")
-fi
+  # now get <=1.2 ciphers
+  readarray -t -d : ciphers < <(openssl ciphers "${opts[@]}" \
+                                        -s "${CIPHERLIST}:@SECLEVEL=0")
+}
 
 test_cipher() { # <cipher> [ <openssl-opts> ]
-  local show_cipher CIPHER result
-  local cipher=$1
+  local show_cipher result args=() cipher=${1%$'\n'}
   shift
-  [ -n "$list" ] && echo "$cipher" && return
-  if [ -z "$cipher" ]; then
+  [[ $list ]] && echo "$cipher" && return
+  if [[ -z $cipher ]]; then
     show_cipher=1
+    args+=("-cipher" "$CIPHERLIST:@SECLEVEL=0")
   elif [[ $tls13 ]]; then
-    CIPHER="-ciphersuites $cipher"
+    args+=("-ciphersuites" "$cipher")
   else
-    CIPHER="-cipher $cipher:@SECLEVEL=0"
+    args+=("-cipher" "$cipher:@SECLEVEL=0")
   fi
+  [[ $LVLOPT ]] && args+=("$LVLOPT")
 
-  if [ -n "$1" ]; then
-    echo openssl s_client $CIPHER $LVLOPT $SERVER $STARTTLS "$@"
-    echo ${STARTTLS:+quit} | openssl s_client $CIPHER $LVLOPT $SERVER $STARTTLS "$@" 2>&1
+  [[ $1 ]] && {
+    echo openssl s_client "${args[@]}" "${ARGS[@]}" "$@"
+    echo "${STARTTLS:+quit}" |
+      openssl s_client "${args[@]}" "${ARGS[@]}" "$@" 2>&1
+    [[ $DELAY ]] && sleep "$DELAY"
     return
-  fi
+  }
 
   printf "%-32s" "$cipher "
-  #echo -e "\nopenssl s_client $CIPHER $LVLOPT $SERVER $STARTTLS"
-  result=$(echo ${STARTTLS:+quit} | openssl s_client $CIPHER $LVLOPT $SERVER $STARTTLS 2>&1)
-  if [[ "$result" =~ ":error:" ]] ; then
+  #echo -e "\nopenssl s_client "${args[@]}" "${ARGS[@]}""
+  result=$(echo "${STARTTLS:+quit}" |
+             openssl s_client "${args[@]}" "${ARGS[@]}" 2>&1)
+  if [[ $result =~ ":error:" ]] ; then
     printf "%-10s" "Failed"
-    echo "("$(echo -n "$result" | grep ":error:" | cut -d':' -f6)")"
-    return
-  fi
-  if [[ "$result" =~ "Cipher is " ]] ; then
+    echo "($(echo -n "$result" | grep ":error:" | cut -d':' -f6))"
+  elif [[ $result =~ "Cipher is " ]] ; then
     if [[ $show_cipher ]]; then
       echo -n "$result" | grep "Cipher is " | sed 's/.*Cipher is //'
     else
       echo "Accepted"
     fi
   else
-    printf "%-10s\n" "UNKNOWN OUTPUT:"
-    echo "$result"
-    echo "Possibly new openssl output format?"
-    exit 1
+    printf >&2 "%-10s\n" "UNKNOWN OUTPUT:"
+    err "$result"
+    die "Possibly new openssl output format?"
   fi
+  [[ $DELAY ]] && sleep "$DELAY"
 }
 
+process_dest "$1"
+shift
+# rest of args are for openssl...
+
+load_ciphers
+
 tls13=1
-for cipher in ${ciphers13[@]}
-do
+for cipher in "${ciphers13[@]}"; do
   test_cipher "$cipher" "$@"
-  [[ $DELAY ]] && sleep $DELAY
 done
 tls13=
 
 # <=tls1.2
 OLVLOPT=$LVLOPT
 [[ $LVLOPT ]] || LVLOPT=-tls1_2
-for cipher in ${ciphers[@]}
-do
+for cipher in "${ciphers[@]}"; do
   test_cipher "$cipher" "$@"
-  [[ $DELAY ]] && sleep $DELAY
 done
 LVLOPT=$OLVLOPT
 
+[[ $list ]] && exit
 echo -n "Preferred: "
 test_cipher "" "$@"
 
