@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# finish-upgrade v1.18
+# finish-upgrade v1.19
 #
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
@@ -256,7 +256,7 @@ fi
 
 # check for mwan3
 if [ -f /etc/config/mwan3 ]; then
-  install_pkgs luci-app-mwan3 iptables-nft ip6tables-nft
+  install_pkgs luci-app-mwan3 iptables-nft ip6tables-nft conntrack
 fi
 
 # check for irqbalance
