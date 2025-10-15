@@ -1,0 +1,23 @@
+#
+# Checks that any private ip6 addresses routing out WAN interfaces are
+# masqueraded.
+
+add table inet ipv6_masq
+delete table inet ipv6_masq
+
+define WAN1 = "vlan3"
+define WAN2 = "vlan4"
+
+table inet ipv6_masq {
+
+  set wan_interfaces {
+     type ifname
+     elements = { $WAN1, $WAN2 }
+  }
+
+  chain check_nat {
+    type nat hook postrouting priority srcnat; policy accept;
+    comment "private source ipv6 addresses need masquerade"
+    oifname @wan_interfaces ip6 saddr fc00::/7 masquerade fully-random
+  }
+}

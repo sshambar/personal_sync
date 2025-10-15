@@ -46,7 +46,8 @@ table inet vlanx_mark {
 
   # mark based on iifname
   chain new_PREROUTING_policy {
-    iifname $LAN counter mark set mark and 0xffffff0f xor 0x10
+    # DISABLED so can be router
+    # iifname $LAN counter mark set mark and 0xffffff0f xor 0x10
     iifname $WAN1 counter mark set mark and 0xffffff0f xor 0x20
     iifname $WAN2 counter mark set mark and 0xffffff0f xor 0x30
     ct mark set mark and 0x30
@@ -91,9 +92,9 @@ table inet vlanx_mark {
     oifname @mark_interfaces jump mark_OUTPUT
   }
 
-  chain PORTROUTING {
+  chain POSTROUTING {
     type nat hook postrouting priority srcnat; policy accept;
     # anything flagged in check_mark gets nat'd
-    oifname @mark_interfaces ct mark and 0x40 == 0x40 masquerade
+    oifname @mark_interfaces ct mark and 0x40 == 0x40 masquerade fully-random
   }
 }
