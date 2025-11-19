@@ -10,8 +10,11 @@ command -v kubectl >/dev/null || return 0
 alias kc=kubectl
 if [ -n "$BASH" ]; then
   _my_kc_load_comp() {
-    declare -F __load_completion >/dev/null || return 0
-    __load_completion kubectl && complete -o default -F __start_kubectl kc
+    declare -F __start_kubectl >/dev/null ||
+      eval -- "$(kubectl completion bash 2>/dev/null)" || :
+    declare -F __start_kubectl >/dev/null || {
+      echo >&2 "__start_kubectl not defined"; return 1; }
+    complete -o default -F __start_kubectl kc
   }
   complete -o default -F _my_kc_load_comp kc
 fi
