@@ -5,7 +5,7 @@
 # Skip all for noninteractive shells.
 [ ! -t 0 ] && return
 
-[ -x /usr/bin/kubectl ] || return 0
+command -v kubectl >/dev/null || return 0
 
 alias kc=kubectl
 if [ -n "$BASH" ]; then
