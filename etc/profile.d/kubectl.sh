@@ -7,7 +7,10 @@
 
 command -v kubectl >/dev/null || return 0
 
-alias kc=kubectl
+kc() {
+  kubectl "$@"
+}
+
 if [ -n "$BASH" ]; then
   _my_kc_load_comp() {
     declare -F __start_kubectl >/dev/null ||
@@ -35,3 +38,18 @@ kcns() {
   unset _c
 }
 
+kcuse() { # [ <new-context> ]
+  if [ -n "$1" ]; then
+    kubectl config use-context "$1"
+  else
+    _c=$(kubectl 2>/dev/null config current-context)
+    for _n in $(kubectl config view -o json | jq -r .contexts[].name); do
+      if [ "$_c" = "$_n" ]; then
+        echo "$_n (current)"
+      else
+        echo "$_n"
+      fi
+    done
+    unset _c _n
+  fi
+}
