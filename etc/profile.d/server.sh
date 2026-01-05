@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# server.sh v1.0 - linux server specific defines
+# server.sh v1.1 - linux server specific defines
 
 # Skip all for noninteractive shells.
 [[ -t 0 ]] || return 0
@@ -23,12 +23,13 @@ else
   alias jc=journalctl
 
   asuser() { # <uid> <cmd>...
+    local uid gid
     [[ $1 ]] || { echo "Usage: asuser <user> [ <cmd>... ]"; return 1; }
-    local uid=$(id 2>/dev/null -ru "$1") gid=$(id 2>/dev/null -rg "$1")
+    uid=$(id 2>/dev/null -ru "$1") gid=$(id 2>/dev/null -rg "$1")
     [[ $uid && $gid ]] || { echo "Invalid user '$1'"; return 2; }
     shift
     [[ $1 ]] || set bash
-    setpriv --reset-env --reuid=$uid --regid=$gid \
+    setpriv --reset-env --reuid="$uid" --regid="$gid" \
             --init-groups env XDG_RUNTIME_DIR="/run/user/$uid" "$@"
   }
 
@@ -37,6 +38,24 @@ else
     local user=$1; shift
     asuser "$user" systemctl --user "$@"
   }
+fi
+
+if [ -n "$BASH" ]; then
+  _my_sc_load_comp() {
+    declare -F _systemctl >/dev/null || _comp_load -D -- systemctl
+    declare -F _systemctl >/dev/null || {
+      echo >&2 "_systemctl not defined"; return 1; }
+    complete -F _systemctl sc
+  }
+  complete -F _my_sc_load_comp sc
+
+  _my_jc_load_comp() {
+    declare -F _journalctl >/dev/null || _comp_load -D -- journalctl
+    declare -F _journalctl >/dev/null || {
+      echo >&2 "_journalctl not defined"; return 1; }
+    complete -F _journalctl jc
+  }
+  complete -F _my_jc_load_comp jc
 fi
 
 [[ $INSIDE_EMACS ]] && export SYSTEMD_PAGER=
