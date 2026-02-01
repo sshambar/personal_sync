@@ -3,7 +3,7 @@ SUBSYSTEM!="block", GOTO="media_mount_end"
 ENV{ID_FS_USAGE}!="filesystem", GOTO="media_mount_end"
 
 # start kodi
-ACTION=="change", ENV{ID_FS_LABEL}=="media", TAG+="systemd", ENV{SYSTEMD_WANTS}+="getty@tty1.service"
+ACTION=="change", ENV{ID_FS_LABEL}=="media", TAG+="systemd", ENV{SYSTEMD_WANTS}+="getty@tty2.service"
 
 # Done
 LABEL="media_mount_end"
