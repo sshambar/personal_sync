@@ -9,4 +9,7 @@
 [[ $(tty) =~ /dev/tty(S|USB)[0-9]+ ]] && command -v >/dev/null resize ||
     return 0
 
-[[ $PROMPT_COMMAND ]] && PROMPT_COMMAND+="; resize >/dev/null"
+[[ $PROMPT_COMMAND ]] || return 0
+
+# ensure vt100 compat before using...
+resize >/dev/null 2>&1 && PROMPT_COMMAND+="; resize >/dev/null"
