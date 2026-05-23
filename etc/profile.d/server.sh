@@ -1,9 +1,20 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# server.sh v1.1 - linux server specific defines
+# server.sh v1.2 - linux server specific defines
 
-# Skip all for noninteractive shells.
+# allow aliases on non-interactive shells
+shopt -s expand_aliases
+
+if [[ ${EUID-} != 0 ]] ; then
+  alias sc='systemctl --user'
+  alias jc='journalctl --user'
+else
+  alias sc=systemctl
+  alias jc=journalctl
+fi
+
+# Skip rest for noninteractive shells.
 [[ -t 0 ]] || return 0
 
 declare >/dev/null -F pathmunge && {
@@ -14,13 +25,9 @@ declare >/dev/null -F pathmunge && {
 if [[ ${EUID-} != 0 ]] ; then
   [[ -z $XDG_RUNTIME_DIR && -d /run/user/$EUID ]] && \
     export XDG_RUNTIME_DIR="/run/user/$EUID"
-  alias sc='systemctl --user'
-  alias jc='journalctl --user'
   # use dnf cache files if not running as root
   alias dnf='dnf --cacheonly' 2>/dev/null
 else
-  alias sc=systemctl
-  alias jc=journalctl
 
   asuser() { # <uid> <cmd>...
     local uid gid
