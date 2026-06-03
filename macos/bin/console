@@ -1,0 +1,78 @@
+#!/bin/bash
+
+set -e
+
+err() { echo >&2 "$*"; }
+die() { err "$*"; exit 1; }
+
+require() {
+  local rc exe
+  for exe in "$@"; do
+    command -v >/dev/null "$exe" || { rc=1; err "$exe not in PATH"; }
+  done
+  [[ $rc ]] && exit "$rc"
+  return 0
+}
+
+connect() { # <port>
+  local i link="/tmp/console-for-$1"
+
+  [[ -c $link ]] && die "console appears on $link already"
+
+  socat tcp:localhost:"$1" pty,link="$link" &
+
+  for ((i=0; i<5; i++)); do
+    sleep 1
+    [[ -c $link ]] && break
+    # check socat didn't die
+    [[ $(jobs -p) ]] || exit 1
+  done
+
+  [[ -c $link ]] || {
+    kill 2>/dev/null %socat
+    die "socat failed to create pty $link"
+  }
+
+  screen "$link"
+}
+
+choose() { # [ <host> ]
+  local opt port=''
+
+  case $1 in
+    fedora) port=2023;;
+    fedora2) port=2024;;
+    fedora3) port=2025;;
+    '') port='';;
+    *) die "Unknown host $1";;
+  esac
+
+  [[ $port ]] || {
+    echo "Host connections available:"
+    echo "  1 - fedora"
+    echo "  2 - fedora2"
+    echo "  3 - fedora3"
+    read -rp "Choice: " opt
+
+    case $opt in
+      1) port=2023;;
+      2) port=2024;;
+      3) port=2025;;
+    esac
+
+    [[ $port ]] || die "Quitting"
+  }
+
+  connect "$port"
+}
+
+require socat screen
+
+[[ $1 == -h || $1 == --help ]] && {
+  echo "Usage: ${0##*/} [ <host> ]"
+  exit 0
+}
+
+choose "$1"
+
+echo "Bye!"
