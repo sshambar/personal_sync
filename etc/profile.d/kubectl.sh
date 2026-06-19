@@ -26,6 +26,8 @@ kcns() {
   _c=$(kubectl config current-context)
   if [ -n "$_c" ]; then
     if [ -n "$1" ]; then
+      kubectl >/dev/null 2>&1 get ns "$1" -o name || \
+        { echo >&2 "Namespace not found: $1"; unset _c; return 1; }
       kubectl config set "contexts.$_c.namespace" "$1"
     else
       kubectl config view \
