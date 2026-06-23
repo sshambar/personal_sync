@@ -1,34 +1,47 @@
 #!/bin/sh
 #
-# finish-upgrade v1.19
+# finish-upgrade v2.0
 #
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
 #    tcpdump-mini procps-ng-ps less irqbalance coreutils-stty iperf3
 # shellcheck shell=dash
 
-[ "$(id -u)" -ne 0 ] && echo "Run as root!" && exit 1
+set -e
+
+DEBUG=${DEBUG:-}
+debug() { [ "$DEBUG" ] && echo "$@" >&2 || :; }
+err() { echo >&2 "$*"; }
+die() { err "$@"; exit 1; }
+
+help() { die "$1 (-h for help)"; }
+found() { command >/dev/null -v "$1"; }
+
+DRYRUN=
+cmd() { # <exe> [ <args>... ]
+  [ "$1" ] || die "cmd() requires <exe>"
+  debug cmd "$@"
+  $DRYRUN "$@"
+}
 
 usage() {
   echo "Install selected packages previously configured"
   echo "Usage: ${0} -h | help"
-  echo "Usage: ${0} [ -d ] [ full ]"
+  echo "Usage: ${0} [ -d ] [ -n ] [ full ]"
   echo "  -h - Show this help and exit"
-  echo "  -d - debug mode (dry-run)"
+  echo "  -d - debug mode"
+  echo "  -n - dry-run"
   echo "  full - install extra packages, even ones not configured before"
   exit 0
 }
 
-help() {
-  echo >&2 "$1 (-h for help)"
-  exit 1
-}
+[ "$(id -u)" -ne 0 ] && die "Run as root!"
 
 full=
-
 while [ "$1" ]; do
   case "$1" in
-    -d) debug="echo";;
+    -d) DEBUG=1;;
+    -n) DRYRUN=:;;
     full) full=1;;
     -h|help) usage;;
     *) help "Unknown option '$1'";;
@@ -36,10 +49,8 @@ while [ "$1" ]; do
   shift
 done
 
-set -e
-
 echo
-echo "Finishing upgrade...${debug:+DEBUG}"
+echo "Finishing upgrade...${DEBUG:+DEBUG}"
 echo
 
 NET_RESTART=
@@ -59,64 +70,145 @@ ${EXIT_MSGS:+${EXIT_MSGS}
 EOF
 }
 
-PKG_CORE=
-_pkgs_update() { # update if opkg lists missing or old
-  [ "$PKG_CORE" ] && return
-  [ -f /etc/opkg/distfeeds.conf ] || {
-    echo "Missing opkg distfeeds.conf"; exit 1; }
+pkg=apk
+found apk || pkg=opkg
 
-  PKG_CORE=$(head -1 /etc/opkg/distfeeds.conf | awk '{ print $2 }')
+# OPKG functions
 
-  if [ -z "$(find "/var/opkg-lists/$PKG_CORE" -mtime -1 2>/dev/null)" ]; then
-    $debug rm -f "/var/opkg-lists/$PKG_CORE"
-    $debug opkg update
-    if [ -f "/var/opkg-lists/$PKG_CORE" ]; then
-      touch "/var/opkg-lists/$PKG_CORE"
+_OPKG_CORE=
+_opkg_update() { # update if opkg lists missing or old
+  [ "$_OPKG_CORE" ] && return
+  [ -f /etc/opkg/distfeeds.conf ] || \
+    die "Missing opkg distfeeds.conf"
+
+  _OPKG_CORE=$(head -1 /etc/opkg/distfeeds.conf)
+  _OPKG_CORE=${_OPKG_CORE#* }
+  _OPKG_CORE=${_OPKG_CORE%% *}
+
+  if [ -z "$(find "/var/opkg-lists/$_OPKG_CORE" -mtime -1 2>/dev/null)" ]; then
+    cmd rm -f "/var/opkg-lists/$_OPKG_CORE"
+    cmd opkg update
+    if [ -f "/var/opkg-lists/$_OPKG_CORE" ]; then
+      cmd touch "/var/opkg-lists/$_OPKG_CORE"
     else
-      PKG_CORE=
+      _OPKG_CORE=
     fi
   fi
-  [ "$PKG_CORE" ]
+  [ "$_OPKG_CORE" ]
 }
 
-is_installed() { # <name>
+_opkg_is_installed() { # <name>
   opkg status "$1" | grep -q 'Status:.*installed'
 }
 
-_install_pkg() { # <name>
-  is_installed "$1" && return
-  _pkgs_update
-  $debug opkg install "$1"
+_opkg_install() { # <name>
+  _opkg_update
+  cmd opkg install "$1"
+}
+
+_opkg_remove() { # <name>
+  cmd opkg remove "$1"
+}
+
+_opkg_files() { # <pkg>
+  opkg files "$1"
+}
+
+_opkg_fetch() { # <pkg>
+  cmd opkg 2>/dev/null --noaction --cache /tmp install "$1" || :
+}
+
+_opkg_install_local() { # <pkg>
+  cmd opkg --cache /tmp install "$1"
+}
+
+# APK functions
+
+_apk_is_installed() { # <pkg>
+  apk >/dev/null info --installed "$1"
+}
+
+_apk_install() { # <pkg>
+  cmd apk add "$1"
+}
+
+_apk_remove() { # <name>
+  cmd apk del "$1"
+}
+
+_apk_files() { # <pkg>
+  apk info -L "$1"
+}
+
+_apk_fetch() { # <pkg>
+  cmd apk fetch -o /tmp "$1" || :
+}
+
+_apk_install_local() { # <pkg>
+  cmd apk add /tmp/"$1"*.apk
+}
+
+# generic functions
+
+is_installed() { # <name>
+  debug -n "is_installed $1"
+  "_${pkg}_is_installed" "$1" || {
+    debug " - no"
+    return 1
+  }
+  debug " - yes"
 }
 
 install_pkgs() { # <name>...
+  debug "install_pkgs $*"
   while [ "$1" ]; do
-    _install_pkg "$1" || return
+    is_installed "$1" || {
+      "_${pkg}_install" "$1" || return
+    }
     shift
   done
 }
 
-_disable_pkg() { # <name>
+install_local_pkg() { # <name>
+  debug "install_local_pkg $1"
+  "_${pkg}_install_local" "$1"
+}
+
+remove_pkg() { # <name>
+  debug "remove_pkg $1"
+  "_${pkg}_remove" "$1"
+}
+
+fetch_pkg() { # <name>
+  debug "fetch_pkg $1"
+  "_${pkg}_fetch" "$1"
+}
+
+_init_disable() { # <pkg>
   local init_file app file
-  is_installed "$1" || return 0
-  init_file=$(opkg files "$1" | grep "^/etc/init.d/" | head -1)
+  # bypass is_installed as not a package action
+  "_${pkg}_is_installed" "$1" || return 0
+  init_file=$("_${pkg}_files" "$1" | grep "^/etc/init.d/" | head -1)
   [ -z "$init_file" ] && echo "Package $1 has no init.d file" && return 1
-  [ "$("$init_file" status)" = running ] && $debug "$init_file" stop
+  [ "$("$init_file" status)" = running ] && cmd "$init_file" stop
   app=${init_file##*/}
   for file in /etc/rc.d/S*"$app"; do
     [ -f "$file" ] || continue
     echo disabling "$app"
-    $debug "$init_file" disable
+    cmd "$init_file" disable
     break
   done
 }
 
 disable_pkgs() { # <name>...
+  debug "disable_pkgs $*"
   while [ "$1" ]; do
-    _disable_pkg "$1" || return
+    _init_disable "$1" || return
     shift
   done
 }
+
+# program starts here
 
 disable_pkgs dnscrypt-proxy2 samba4-server wsdd2
 
@@ -134,7 +226,7 @@ handle_homedir() { # <user> <source>
   [ "$dir" ] || {
     add_msg "User $user needs a home directory (from $2)"; return; }
   [ -d "$dir" ] || {
-    $debug mkdir -p "$dir" || {
+    cmd mkdir -p "$dir" || {
       add_msg "Failed to create home for user '$user'"; return; }
   }
   # we don't want to chown any of these
@@ -146,14 +238,14 @@ handle_homedir() { # <user> <source>
     return
   done
   [ -G "$dir" ] && {
-    $debug chgrp -R "$user" "$dir" || {
+    cmd chgrp -R "$user" "$dir" || {
       add_msg "User group needed for user '$user'"; return; }
   }
   if [ "$user" = "$admin" ]; then
     # admin user (for remote ssh access) had home dir owned by root
-    [ -O "$dir" ] || $debug chown -R "root" "$dir"
+    [ -O "$dir" ] || cmd chown -R "root" "$dir"
   else
-    [ -O "$dir" ] && $debug chown -R "$user" "$dir"
+    [ -O "$dir" ] && cmd chown -R "$user" "$dir"
   fi
 }
 
@@ -206,26 +298,31 @@ fi
 
 # check for dnsmasq-full
 if [ -f /etc/hotplug.d/iface/10-dnsmasq-dhcpv6 ]; then
+
   if ! is_installed dnsmasq-full; then
+
     # odhcpd conflicts with dnsmasq dhcpv6
     disable_pkgs odhcpd-ipv6only
-    $debug rm -f /tmp/hosts/odhcpd
+    cmd rm -f /tmp/hosts/odhcpd
 
-    $debug rm -f /tmp/*.ipk
-    # this will download all uninstalled requirements
-    $debug opkg 2>/dev/null --noaction --cache /tmp install dnsmasq-full || :
-    for file in /tmp/dnsmasq-full*.ipk; do
-      [ -f "$file" ] || {
-        echo "Failed to download dnsmasq-full!";
-        $debug exit 1;
-      }
-      echo "Swapping dnsmasq for dnsmasq-full..."
-      is_installed dnsmasq && $debug opkg remove dnsmasq
-      $debug opkg --cache /tmp install dnsmasq-full
-      $debug rm -f /tmp/*.ipk
+    if [ $pkg = opkg ]; then
+      # opkg doesn't correctly swap
+      cmd rm -f /tmp/*.ipk
+      # this will download all uninstalled requirements
+      fetch_pkg dnsmasq-full
+      for file in /tmp/dnsmasq-full*.ipk; do
+        [ -f "$file" ] || die "Failed to download dnsmasq-full!";
+        echo "Swapping dnsmasq for dnsmasq-full..."
+        is_installed dnsmasq && cmd remove_pkg dnsmasq
+        install_local_pkg dnsmasq-full
+        cmd rm -f /tmp/*.ipk
+        NET_RESTART=1
+        break
+      done
+    else
+      install_pkg dnsmasq-full
       NET_RESTART=1
-      break
-    done
+    fi
   fi
 fi
 
@@ -235,11 +332,15 @@ if [ -f /etc/hotplug.d/iface/90-homedns ]; then
   install_pkgs bind-client bind-dig curl ca-bundle
 fi
 
-# older less pkgs fail, workaround error
 if ! is_installed less; then
-  $debug rm -f /usr/bin/less
-  $debug opkg install --force-overwrite less || \
-    { ln -s ../bin/busybox /usr/bin/less; exit 1; }
+  if [ $pkg = opkg ]; then
+    # older less pkgs fail, workaround error
+    cmd rm -f /usr/bin/less
+    cmd opkg install --force-overwrite less || \
+      { ln -s ../bin/busybox /usr/bin/less; exit 1; }
+  else
+    install_pkg less
+  fi
 fi
 
 # optional installs
