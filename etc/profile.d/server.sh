@@ -1,10 +1,10 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# server.sh v1.2 - linux server specific defines
+# server.sh v1.3 - linux server specific defines
 
 # allow aliases on non-interactive shells
-shopt -s expand_aliases
+[[ $BASH ]] && shopt -s expand_aliases
 
 if [[ ${EUID-} != 0 ]] ; then
   alias sc='systemctl --user'
