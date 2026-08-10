@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# emacs.sh v1.1 - setup emacs aliases if we have the correct environment
+# emacs.sh v1.2 - setup emacs aliases if we have the correct environment
 #
 # Requires the following in ~/.emacs (or home-start.el)
 #
@@ -43,8 +43,6 @@ setup_emacs() {
     # emacs/less/man should give prompt back inside emacs
     alias emacs="$EDITOR -n"
     alias vi="$EDITOR -n"
-    alias less="$EDITOR -n"
-    alias more="$EDITOR -n"
     # just handle one man entry...
     man() { $EDITOR >/dev/null -n -e "(man \"$1\")"; }
 
