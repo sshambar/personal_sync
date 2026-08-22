@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# mac.sh v1.1 - local defines for OSX
+# mac.sh v1.2 - local defines for OSX
 
 # utf8 baby
 export LANG=en_US.UTF-8
@@ -9,7 +9,11 @@ export LANG=en_US.UTF-8
 # macports....
 add_root_path /opt/local/ before
 # add homebrew...
-add_root_path /usr/local/ before
+if [[ -d /opt/homebrew ]]; then
+  add_root_path /opt/homebrew/ before
+else
+  add_root_path /usr/local/ before
+fi
 
 # Rest for interactive terminals only
 [[ -t 0 ]] || return 0
@@ -18,11 +22,13 @@ add_root_path /usr/local/ before
 add_path PATH /Applications/Xcode.app/Contents/Developer/usr/bin
 add_path PATH /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
 
-# local sbin (for sudo)
-add_path PATH /sbin
-add_path PATH /usr/sbin
-add_path PATH /usr/local/sbin
-add_path PATH /opt/local/sbin
+[[ $EUID == 0 ]] && {
+  # local sbin (for sudo)
+  add_path PATH /sbin
+  add_path PATH /usr/sbin
+  add_path PATH /usr/local/sbin
+  add_path PATH /opt/local/sbin
+}
 
 # order local first
 add_path PATH ~/.local/bin before
