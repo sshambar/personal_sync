@@ -1,7 +1,7 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# mac.sh v1.0 - local defines for OSX
+# mac.sh v1.1 - local defines for OSX
 
 # utf8 baby
 export LANG=en_US.UTF-8
@@ -67,12 +67,7 @@ if [[ $SSH_AUTH_SOCK ]]; then
   # use MacOS's ssh-add to auto-spawn ssh-agent (and use keychain passphrase)
   [ $(/usr/bin/ssh-add -l | grep -v ^The | wc -l) -ne 0 ] || {
     echo "Adding keys to ssh-agent..."
-    REL=$(uname -r)
-    if [[ ${REL%%.*} -ge 21 ]]; then
-      /usr/bin/ssh-add --apple-load-keychain
-    else
-      /usr/bin/ssh-add -K
-    fi
+    ssh-add -k
   }
 fi
 
