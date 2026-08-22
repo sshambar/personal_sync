@@ -1,19 +1,15 @@
 # -*- mode: sh; sh-basic-offset: 2; indent-tabs-mode: nil; -*-
 # vim:set ft=sh et sw=2 ts=2:
 #
-# mac.sh v1.2 - local defines for OSX
+# mac.sh v1.3 - local defines for OSX
 
 # utf8 baby
 export LANG=en_US.UTF-8
 
 # macports....
-add_root_path /opt/local/ before
-# add homebrew...
-if [[ -d /opt/homebrew ]]; then
-  add_root_path /opt/homebrew/ before
-else
-  add_root_path /usr/local/ before
-fi
+add_root_path /opt/local before
+
+add_root_path /usr/local before
 
 # Rest for interactive terminals only
 [[ -t 0 ]] || return 0
@@ -81,6 +77,9 @@ shopt -s extglob histappend
 
 # mac classic less doesn't support color correctly
 [[ $MANPAGER && $(command -v less) == /usr/bin/less ]] && unset MANPAGER
+
+# docker compat
+export "DOCKER_HOST=unix://${TMPDIR}podman/podman-machine-default-api.sock"
 
 # don't annoy us...
 export BASH_SILENCE_DEPRECATION_WARNING=1
