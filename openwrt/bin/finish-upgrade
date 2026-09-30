@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# finish-upgrade v2.0
+# finish-upgrade v2.1
 #
 # Installs all extra packages, and fixes up things like admin_user dir
 # Useful starting build includes: diffutils bash openssh-sftp-server
@@ -339,7 +339,7 @@ if ! is_installed less; then
     cmd opkg install --force-overwrite less || \
       { ln -s ../bin/busybox /usr/bin/less; exit 1; }
   else
-    install_pkg less
+    install_pkgs less
   fi
 fi
 
