@@ -1,16 +1,21 @@
 #!/bin/sh
 
-# list-user-installed v1.0
+# list-user-installed v2.0
 
 # find user installed programs that have different version
 # or don't exist in /rom
 
-ROM=$(sed -ne '/^Package:[[:blank:]]*/ { s///; h; }
+if command >/dev/null -v apk; then
+  ROM=$(cat /rom/etc/apk/world)
+  CUR=$(cat /etc/apk/world)
+else
+  ROM=$(sed -ne '/^Package:[[:blank:]]*/ { s///; h; }
 /^Version:[[:blank:]]*/ { s///; H; g; s/\n/#/; p;}' /rom/usr/lib/opkg/status)
 
-CUR=$(sed -ne '/^Package:[[:blank:]]*/ { s///; h; }
+  CUR=$(sed -ne '/^Package:[[:blank:]]*/ { s///; h; }
 /^Version:[[:blank:]]*/ { s///;	H; }
 /^Status:.*user installed/ { g;	s/\n/#/; p; }' /usr/lib/opkg/status)
+fi
 
 for prog in $CUR; do
   for romprog in $ROM; do
