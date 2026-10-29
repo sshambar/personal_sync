@@ -1,0 +1,192 @@
+#!/bin/bash
+#
+# mariadb-backup-cron v0.5 Periodic Incremental MariaDB Backup/Restore
+#
+# Author: Scott Shambarger <devel@shambarger.net>
+# Copyright (C) Scott Shambarger
+#
+# Add a cron to call this script as a user with mariadb-backup permissions
+# on a periodic basis.  Every --freq <secs>, and new full backup is
+# taken in <dir>/<freq>-<seq> (<seq> is based on current time).  Otherwise
+# an incremental backup is added in the full backup dir.
+# At most --keep <num> full backups are retained.
+#
+# To restore, <src> a full backup directory, and the full backup and
+# all incremental backups are applied to <dir> (which must be empty).
+#
+
+set -e -o pipefail
+
+: "${FREQ:=$((7*24*3600))}"
+: "${KEEP:=5}"
+: "${LOG:=restore.log}"
+
+err() { echo "$*" >&2; }
+die() { err "$*"; exit 1; }
+die_help() { die "$* (try --help)"; }
+
+(( FREQ > 0 )) || die "\$FREQ must be a positive # (found $FREQ)"
+(( KEEP > 0 )) || die "\$KEEP must be a positive # (found $KEEP)"
+
+usage() {
+  echo "Daily backup using mariadb-backup"
+  echo "Usage: ${0##*/} [ <options> ] | --help"
+  echo "<options> is any of:"
+  echo " --dest <dir> - backup to <dir>"
+  echo " --freq <secs> - full backup frequency (or \$FREQ=$FREQ)"
+  echo " --keep <num> - keep <num> full backups (or \$KEEP=$KEEP)"
+  echo "== OR =="
+  echo " --restore <src> - restore from full backup in <src>"
+  echo " --dest <dir> - restore to <dir>"
+  echo " --log <file> - log restore to <file> (or \$LOG=$LOG)"
+  exit
+}
+
+RESTORE='' SRC_DIR=''
+
+while [[ $1 ]]; do
+  case $1 in
+    --dest)
+      [[ $2 ]] || die_help "--dest requires <dir>"
+      shift; DEST_DIR=$1
+      [[ -d $DEST_DIR ]] || die "--dest '$DEST_DIR' must exist"
+      ;;
+    --restore)
+      RESTORE=1
+      [[ $2 ]] || die_help "--restore requires <src>"
+      shift; SRC_DIR=$1
+      [[ -s $SRC_DIR/mariadb_backup_checkpoints ]] ||
+        die "--restore <src> must be a full backup"
+      ;;
+    --freq)
+      [[ $2 ]] || die_help "--freq requires <secs>"
+      shift; FREQ=$1
+      (( FREQ > 0 )) || die "--freq must be a positive # (found $FREQ)"
+      ;;
+    --keep)
+      [[ $2 ]] || die_help "--keep requires <num>"
+      shift; KEEP=$1
+      (( KEEP > 0 )) || die "--keep must be a positive # (found $KEEP)"
+      ;;
+    --log)
+      [[ $2 ]] || die_help "--log requires <file>"
+      shift; LOG=$1
+      ;;
+    -h|--help) usage;;
+    *) die_help "Unknown option '$1'";;
+  esac
+  shift
+done
+
+[[ $DEST_DIR ]] || die_help "--dest <dir> required"
+[[ -d $DEST_DIR ]] || die "--dest '$DEST_DIR' must exists"
+
+command -v >/dev/null mariadb-backup ||
+  die "Unable to find mariadb-backup in PATH"
+
+rc=0
+shopt -s nullglob
+
+if [[ $RESTORE ]]; then
+
+  # ensure $DEST_DIR is empty
+  for file in "$DEST_DIR"/*; do break; done
+  [[ $file ]] && die "--dest '$DEST_DIR' not empty"
+
+  echo "Applying $SRC_DIR"
+  gunzip -c "$SRC_DIR/base.gz" | mbstream -x -C "$DEST_DIR"
+  mariadb-backup 2>"$LOG" --prepare --target-dir="$DEST_DIR" || {
+    rc=$?
+    err "Restore failed, see $LOG"
+    exit $rc
+  }
+
+  INCR_DIR="$DEST_DIR/_tmp_incr"
+  i=1
+  while :; do
+    INCR="$SRC_DIR/incr-$i"
+    [[ -s $INCR/mariadb_backup_checkpoints ]] || break
+    rm -rf "$INCR_DIR"
+    mkdir -p "$INCR_DIR"
+    echo "Applying $INCR"
+    gunzip -c "$INCR/incr.gz" | mbstream -x -C "$INCR_DIR"
+    mariadb-backup 2>>"$LOG" --prepare --target-dir="$DEST_DIR" \
+                   --incremental-dir="$INCR_DIR" || {
+      rc=$?
+      err "Restore failed, see $LOG"
+      exit $rc
+    }
+    (( i++ )) || :
+  done
+  rm -rf "$INCR_DIR"
+  rm -f "$DEST_DIR/mariadb_backup_"{checkpoints,info}
+  echo "Restore to $DEST_DIR complete (log in $LOG)"
+  exit
+fi
+
+# calculate basecode for this period (UTC based)
+(( BASECODE = EPOCHSECONDS / FREQ )) || :
+
+BASE="$DEST_DIR/$FREQ-$BASECODE"
+
+# check if any full backup exists, create if not
+if [[ ! -s $BASE/mariadb_backup_checkpoints ]]; then
+
+  echo "Creating full backup in $BASE"
+  DEST="$BASE.tmp"
+  LOG="$DEST/base.log"
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
+  if mariadb-backup 2>"$LOG" --backup --stream=xbstream \
+                    --extra-lsndir="$DEST" | gzip > "$DEST/base.gz"; then
+    # may be replacing previous full backup
+    rm -rf "$BASE"
+    mv "$DEST" "$BASE"
+  else
+    rc=$?
+    err "Backup failed!"
+    [[ -s $LOG ]] && cat "$LOG"
+    rm -rf "$DEST"
+    exit $rc
+  fi
+
+else
+
+  i=1
+  REF=$BASE
+  INCR="$BASE/incr-$i"
+  while [[ -d $INCR ]]; do
+    (( i++ )) || :
+    REF=$INCR
+    INCR="$BASE/incr-$i"
+  done
+  echo "Creating incremental backup in $INCR"
+  DEST="$INCR.tmp"
+  LOG="$DEST/incr.log"
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
+
+  if mariadb-backup 2>"$LOG" --backup --stream=xbstream \
+                    --incremental-basedir="$REF" --extra-lsndir="$DEST" \
+      | gzip > "$DEST/incr.gz"; then
+    rm -rf "$INCR"
+    mv "$DEST" "$INCR"
+  else
+    rc=$?
+    err "Backup failed!"
+    [[ -s $LOG ]] && cat "$LOG"
+    rm -rf "$DEST"
+    exit $rc
+  fi
+fi
+
+# backup successful, remove stale backups
+for num in $(for file in "$DEST_DIR/$FREQ-"*; \
+             do echo "${file#"$DEST_DIR/$FREQ-"}"; done \
+               | sort -n | head -n "-$KEEP"); do
+  dir="$DEST_DIR/$FREQ-$num"
+  [[ -d $dir ]] || die "Invalid entry in $DEST_DIR: $dir"
+  echo "Removing stale backup $dir"
+  rm -rf "$dir"
+done
+
