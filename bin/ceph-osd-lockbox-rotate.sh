@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Ceph OSD lockbox key rotation script v0.5
+# Ceph OSD lockbox key rotation script v0.6
 # Author: Scott Shambarger <devel@shambarger.net>
 #
 # Copyright (C) Scott Shambarger
@@ -217,7 +217,7 @@ for id in "${IDS[@]}"; do
     status=$(ceph orch ps --daemon_type osd --daemon_id "$id" --format json |
                jq -r '.[0].status_desc')
     [[ $debug ]] && status=stopped
-    [[ $status != "$pstatus" ]] && echo "OSD status now $status"
+    [[ $status != "$pstatus" ]] && echo "  OSD status now $status"
     pstatus=$status
     [[ $status == stopped ]] && break
     [[ $status == error ]] &&
@@ -225,7 +225,6 @@ for id in "${IDS[@]}"; do
     sleep 5
   done
   [[ $status == stopped ]] || die "Timed out waiting for OSD $id to stop! (status: $status)"
-  echo "  OSD stopped!"
 
   # Now the fun part... rotating the lockbox key!"
   echo
@@ -299,7 +298,7 @@ for id in "${IDS[@]}"; do
   echo
   echo "Checking ceph status..."
   pstatus=''
-  for (( x=0; x<20; x++ )); do
+  for (( x=0; x<40; x++ )); do
     status=$(ceph status --format json | jq -r '.health.status')
     [[ $status == "$pstatus" ]] || echo "  Status now: $status"
     pstatus=$status
