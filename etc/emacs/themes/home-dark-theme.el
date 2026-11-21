@@ -1,3 +1,4 @@
+;; -*- lexical-binding: t; -*-
 (deftheme home-dark
   "Customized dark theme")
 
