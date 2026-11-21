@@ -49,6 +49,11 @@ plshow() { plutil -convert xml1 -o - "$@"; }
 
 # ls with forest and color
 alias ll='ls -l'
+console() {
+  [[ $1 ]] || { echo >&2 "Usage: console <tcp-port>"; return 1; }
+  echo "Use Ctrl-] to exit"
+  socat -,raw,echo=0,escape=0x1d "tcp:localhost:$1"
+}
 
 # OSX has different tools
 strace() { echo "use dtruss or dtrace"; }
