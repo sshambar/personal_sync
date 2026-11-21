@@ -44,6 +44,7 @@ add_root_path() {
   [[ -d $j ]] || return 0
   j="${j%%/}/"
   add_path PATH "${j}bin" "$2"
+  [[ -h ${j}sbin ]] || add_path PATH "${j}sbin" "$2"
   # skip system library paths
   [[ $LD_LIBRARY_PATH && $j != / && $j != /usr/ ]] &&
      add_path LD_LIBRARY_PATH "${j}lib" "$2"
